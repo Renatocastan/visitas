@@ -119,7 +119,7 @@ function VisitCard({v,getUser,colorForUser,onClick}){
         {v.latitude && v.longitude && (
           <p>
             <a
-              href={wazeLink(v.latitude, v.longitude)}
+              href={`https://waze.com/ul?q=${encodeURIComponent(v.endereco_imovel)}&navigate=yes`}
               target="_blank"
               rel="noreferrer"
               onClick={e => e.stopPropagation()}
