@@ -122,7 +122,6 @@ function VisitCard({v,getUser,colorForUser,onClick}){
         <p>Pré: {getUser(v.pre_atendimento_id)?.nome||"-"} | Mostrador: {getUser(v.mostrador_id)?.nome||"-"}</p>
         <p>Cliente: {v.cliente_contato||"-"} | PP: {v.proprietario_nome||"-"}</p>
         {v.observacao && <p>Obs.: {v.observacao}</p>}
-
         {v.latitude && v.longitude && (
           <p>
             <a
@@ -137,7 +136,6 @@ function VisitCard({v,getUser,colorForUser,onClick}){
           </p>
         )}
       </div>
-
       <div className="badges">
         <span className={statusClass(v.status)}>{statusLabel(v.status)}</span>
         {v.checklist && <span className="status checklist">Check list</span>}
