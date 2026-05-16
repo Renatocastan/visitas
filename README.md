@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "@vitejs/plugin-react": "^latest",
+    "vite": "^latest",
+    "react": "^latest",
+    "react-dom": "^latest",
+    "lucide-react": "^latest"
+  },
+  "devDependencies": {}
+}
