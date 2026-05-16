@@ -1,41 +1,8 @@
-create table if not exists acoes_visita (
-  id uuid primary key default gen_random_uuid(),
-  visita_id uuid references visitas(id) on delete cascade,
-  usuario_id uuid references usuarios(id),
-  tipo_acao text not null,
-  status_anterior text,
-  status_novo text,
-  observacao text,
-  valor_proposta numeric,
-  created_at timestamp default now()
-);
-
-alter table acoes_visita enable row level security;
-
-drop policy if exists "Permitir leitura acoes" on acoes_visita;
-drop policy if exists "Permitir inserir acoes" on acoes_visita;
-
-create policy "Permitir leitura acoes"
-on acoes_visita for select
-to anon
-using (true);
-
-create policy "Permitir inserir acoes"
-on acoes_visita for insert
-to anon
-with check (true);
-
-create or replace function set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-drop trigger if exists visitas_set_updated_at on visitas;
-
-create trigger visitas_set_updated_at
-before update on visitas
-for each row
-execute function set_updated_at();
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
