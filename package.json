@@ -1,13 +1,16 @@
-[build]
-  command = "npm run build"
-  publish = "dist"
-[build.environment]
-  NODE_VERSION = "20"
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Cache-Control = "no-store, max-age=0"
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+{
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "@vitejs/plugin-react": "^latest",
+    "vite": "^latest",
+    "react": "^latest",
+    "react-dom": "^latest",
+    "lucide-react": "^latest"
+  },
+  "devDependencies": {}
+}
