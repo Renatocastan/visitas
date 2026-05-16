@@ -68,7 +68,14 @@ export default function App(){
       const up=await supabase.storage.from("visita-fotos").upload(path,file,{upsert:false});
       if(up.error){ alert(up.error.message); continue; }
       const pub=supabase.storage.from("visita-fotos").getPublicUrl(path);
-      await supabase.from("fotos_visita").insert({visita_id:modalVisit.id,usuario_id:user?.id,nome_arquivo:file.name,tipo_arquivo:file.type,url:pub.data.publicUrl,path});
+      await supabase.from("fotos_visita").insert({
+  visita_id: modalVisit.id,
+  usuario_id: user?.id,
+  nome_arquivo: file.name,
+  tipo_arquivo: file.type,
+  url_arquivo: pub.data.publicUrl,
+  caminho_arquivo: path
+});
       await supabase.from("acoes_visita").insert({visita_id:modalVisit.id,usuario_id:user?.id,tipo_acao:"upload_foto_checklist",observacao:`Arquivo anexado: ${file.name}`});
     }
     await loadAll();
