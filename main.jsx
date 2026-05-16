@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const supabase = createClient(supabaseUrl || "", supabaseKey || "", { realtime: { params: { eventsPerSecond: 10 } } });
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import "./styles.css";
+createRoot(document.getElementById("root")).render(<App />);
