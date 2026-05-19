@@ -15,3 +15,75 @@
 .waze-link:hover {
   opacity: 0.85;
 }
+/* Ajuste visual da visão semanal do calendário */
+.weekly-calendar{
+  display:grid;
+  grid-template-columns:repeat(7,minmax(150px,1fr));
+  gap:12px;
+  width:100%;
+}
+
+.weekly-day{
+  min-height:260px;
+  background:#ffffff;
+  border:1px solid #dbe5ef;
+  border-radius:16px;
+  padding:12px;
+  cursor:pointer;
+}
+
+.weekly-day.today{
+  border:2px solid #B91C1C;
+  background:#fff7f7;
+}
+
+.weekly-day-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+  padding-bottom:8px;
+  border-bottom:1px solid #e2e8f0;
+}
+
+.weekly-day-head strong{
+  color:#123B63;
+  font-size:16px;
+}
+
+.weekly-day-head span{
+  font-weight:800;
+  color:#64748B;
+}
+
+.weekly-visit{
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  border-left:5px solid #1E5A8A;
+  border-radius:12px;
+  padding:10px;
+  margin-bottom:8px;
+  cursor:pointer;
+}
+
+.weekly-visit strong{
+  display:block;
+  font-size:14px;
+  color:#0f172a;
+  margin-bottom:4px;
+}
+
+.weekly-visit span{
+  display:block;
+  font-size:13px;
+  color:#475569;
+}
+
+@media(max-width:900px){
+  .weekly-calendar{
+    grid-template-columns:1fr;
+  }
+  .weekly-day{
+    min-height:auto;
+  }
+}
