@@ -55,6 +55,15 @@ export default function App(){
   const todayVisits=visibleVisits.filter(v=>v.data_visita===todayISO()).sort((a,b)=>String(a.horario_visita).localeCompare(String(b.horario_visita))); const reportVisits=visitas.filter(v=>v.data_visita===reportDate);
   const buildReport=arr=>({visitas:arr.length,concluidas:arr.filter(v=>["concluida","avancou_fechamento","contrato"].includes(v.status)).length,desmarcadas:arr.filter(v=>["cancelada","nao_apareceu"].includes(v.status)).length,fechamento:arr.filter(v=>v.checklist||v.status==="avancou_fechamento"||v.status==="contrato").length,contratos:arr.filter(v=>v.contrato_fechado||v.status==="contrato").length,valor:arr.reduce((s,v)=>s+Number(v.valor_proposta||0),0)});
   const reportByPre=preUsers.map(p=>({nome:p.nome,...buildReport(reportVisits.filter(v=>v.pre_atendimento_id===p.id))})); const reportByMostrador=mostradores.map(m=>({nome:m.nome,...buildReport(reportVisits.filter(v=>v.mostrador_id===m.id))}));
+  <section className="grid2">
+  <Card title="Ranking Pré-atendimento">
+    <SimpleBars rows={rankingPre}/>
+  </Card>
+
+  <Card title="Dashboard por status">
+    <SimpleBars rows={statusResumo}/>
+  </Card>
+</section>
   function exportReport(){ const rows=[["Tipo","Nome","Visitas","Concluídas","Desmarcadas/Não apareceu","Avançaram fechamento","Contratos","Valor propostas"]]; reportByPre.forEach(r=>rows.push(["Pré atendimento",r.nome,r.visitas,r.concluidas,r.desmarcadas,r.fechamento,r.contratos,brMoney(r.valor)])); reportByMostrador.forEach(r=>rows.push(["Mostrador",r.nome,r.visitas,r.concluidas,r.desmarcadas,r.fechamento,r.contratos,brMoney(r.valor)])); rows.push([],["Ações do mostrador/fechamento"],["Horário","Usuário","Ação","Imóvel","Cliente","Status anterior","Status novo","Valor proposta","Observação"]); acoes.filter(a=>visitas.find(x=>x.id===a.visita_id)?.data_visita===reportDate).forEach(a=>{const v=visitas.find(x=>x.id===a.visita_id); rows.push([brDateTime(a.created_at),getUser(a.usuario_id)?.nome||"",a.tipo_acao,v?.codigo_imovel||"",v?.cliente_nome||"",statusLabel(a.status_anterior),statusLabel(a.status_novo),brMoney(a.valor_proposta),a.observacao||""])}); exportCsv(`castan-relatorio-${reportDate}.csv`,rows); }
   function startNewVisit(day=null){ if(!canCreateVisit)return alert("Seu perfil não pode criar visitas."); setModalVisit({...emptyVisit(user,preUsers,mostradores),data_visita:day||todayISO()}); }
   function openVisit(v){ if(!canEditVisit(v))return alert("Você pode visualizar, mas não pode editar esta visita."); setModalVisit({...v,valor_proposta:v.valor_proposta||""}); }
