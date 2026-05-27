@@ -1731,28 +1731,27 @@ function VisitModal({f,setF,onClose,onSave,onDelete,isAdmin,isGestor,isMostrador
         }
 
         {f.status==="cancelada"&&<>
-          <Select
-            label="Motivo do cancelamento *"
-            value={f.motivo_cancelamento||""}
-            disabled={limited}
-            onChange={v=>setF({
-              ...f,
-              motivo_cancelamento:v,
-              motivo_cancelamento_outros:v==="outros"?f.motivo_cancelamento_outros:""
-            })}
-            options={MOTIVOS_CANCELAMENTO.map(m=>[m,m])}
-          />
+  <Select
+    label="Motivo do cancelamento *"
+    value={f.motivo_cancelamento||""}
+    disabled={limited}
+    onChange={v=>setF({
+      ...f,
+      motivo_cancelamento:v,
+      motivo_cancelamento_outros:v==="outros"?f.motivo_cancelamento_outros:""
+    })}
+    options={MOTIVOS_CANCELAMENTO.map(m=>[m,m])}
+  />
 
-          {f.motivo_cancelamento==="outros"&&
-            <Field
-              label="Descreva o motivo do cancelamento *"
-              value={f.motivo_cancelamento_outros||""}
-              disabled={limited}
-              onChange={v=>setF({...f,motivo_cancelamento_outros:v})}
-            />
-          }
-        </>}
-
+  {f.motivo_cancelamento==="outros"&&
+    <Field
+      label="Descreva o motivo do cancelamento *"
+      value={f.motivo_cancelamento_outros||""}
+      disabled={limited}
+      onChange={v=>setF({...f,motivo_cancelamento_outros:v})}
+    />
+  }
+</>}
         <label className="check">
           <input
             type="checkbox"
