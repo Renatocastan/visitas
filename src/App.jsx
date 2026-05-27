@@ -1751,7 +1751,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,isAdmin,isGestor,isMostrador
               onChange={v=>setF({...f,motivo_cancelamento_outros:v})}
             />
           }
-        </>
+        </>}
 
         <label className="check">
           <input
