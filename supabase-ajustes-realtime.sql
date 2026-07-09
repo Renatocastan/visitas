@@ -1,18 +1,28 @@
-# Castan Visitas Realtime
+-- Castan Visitas — habilitar sincronização Realtime
+-- Execute uma vez no Supabase > SQL Editor.
+-- Seguro para reexecução: só adiciona tabelas ainda ausentes da publicação.
 
-## Antes de publicar
-1. No Supabase, rode o arquivo `supabase-ajustes-realtime.sql` no SQL Editor.
-2. No Supabase, habilite Realtime nas tabelas:
-   - usuarios
-   - visitas
-   - notificacoes
-   - acoes_visita
-
-## Variáveis de ambiente na Vercel
-- VITE_SUPABASE_URL
-- VITE_SUPABASE_PUBLISHABLE_KEY
-
-## Deploy
-- Framework: Vite
-- Build command: npm run build
-- Output directory: dist
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'usuarios',
+    'visitas',
+    'notificacoes',
+    'acoes_visita',
+    'fotos_visita',
+    'agenda_bloqueios'
+  ]
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+    END IF;
+  END LOOP;
+END $$;

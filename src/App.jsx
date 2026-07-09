@@ -517,31 +517,44 @@ export default function App(){
   },[user?.id,isMostrador,visitas]);
 
   useEffect(()=>{
-    if(view!=="central")return;
-    const interval=setInterval(()=>loadAll(),15000);
-    return()=>clearInterval(interval);
-  },[view,loadAll]);
+    // Sincronização automática orientada a eventos.
+    // Antes havia polling global a cada 3s e, na Central, a cada 15s.
+    // Isso recarregava seis tabelas inteiras repetidamente e elevava o Egress.
+    let syncTimer=null;
+    let lastFocusSync=0;
 
-  useEffect(()=>{
+    const scheduleSync=()=>{
+      // Agrupa rajadas de INSERT/UPDATE/DELETE em uma única leitura.
+      window.clearTimeout(syncTimer);
+      syncTimer=window.setTimeout(()=>loadAll(),500);
+    };
+
     const ch=supabase.channel("castan-realtime-global")
-      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},scheduleSync)
       .subscribe();
 
-    const interval=setInterval(loadAll,3000);
-    const visibility=()=>{if(!document.hidden)loadAll()};
-    window.addEventListener("focus",loadAll);
-    document.addEventListener("visibilitychange",visibility);
+    const syncOnReturn=()=>{
+      if(document.hidden)return;
+      const now=Date.now();
+      // Fallback ao retornar ao app, no máximo uma vez a cada 60s.
+      if(now-lastFocusSync<60000)return;
+      lastFocusSync=now;
+      loadAll();
+    };
+
+    window.addEventListener("focus",syncOnReturn);
+    document.addEventListener("visibilitychange",syncOnReturn);
 
     return()=>{
       supabase.removeChannel(ch);
-      clearInterval(interval);
-      window.removeEventListener("focus",loadAll);
-      document.removeEventListener("visibilitychange",visibility);
+      window.clearTimeout(syncTimer);
+      window.removeEventListener("focus",syncOnReturn);
+      document.removeEventListener("visibilitychange",syncOnReturn);
     };
 
   useEffect(()=>{
