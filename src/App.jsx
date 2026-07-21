@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.2.8-canceladas-no-calendario";
+const APP_VERSION = "Castan Realtime v3.3.0-usuarios-ativos-inativos";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -320,6 +320,7 @@ export default function App(){
     almoco_fixo:false
   });
   const [newPassword,setNewPassword]=useState("");
+  const [teamStatusFilter,setTeamStatusFilter]=useState("ativos");
 
   const savedFilters = (()=>{ try{return JSON.parse(localStorage.getItem("castan_saved_filters")||"{}")}catch{return {}} })();
   const [reportDate,setReportDate]=useState(todayISO());
@@ -517,44 +518,31 @@ export default function App(){
   },[user?.id,isMostrador,visitas]);
 
   useEffect(()=>{
-    // Sincronização automática orientada a eventos.
-    // Antes havia polling global a cada 3s e, na Central, a cada 15s.
-    // Isso recarregava seis tabelas inteiras repetidamente e elevava o Egress.
-    let syncTimer=null;
-    let lastFocusSync=0;
+    if(view!=="central")return;
+    const interval=setInterval(()=>loadAll(),15000);
+    return()=>clearInterval(interval);
+  },[view,loadAll]);
 
-    const scheduleSync=()=>{
-      // Agrupa rajadas de INSERT/UPDATE/DELETE em uma única leitura.
-      window.clearTimeout(syncTimer);
-      syncTimer=window.setTimeout(()=>loadAll(),500);
-    };
-
+  useEffect(()=>{
     const ch=supabase.channel("castan-realtime-global")
-      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},scheduleSync)
-      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},scheduleSync)
-      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},scheduleSync)
-      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},scheduleSync)
-      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},scheduleSync)
-      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},scheduleSync)
+      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},loadAll)
       .subscribe();
 
-    const syncOnReturn=()=>{
-      if(document.hidden)return;
-      const now=Date.now();
-      // Fallback ao retornar ao app, no máximo uma vez a cada 60s.
-      if(now-lastFocusSync<60000)return;
-      lastFocusSync=now;
-      loadAll();
-    };
-
-    window.addEventListener("focus",syncOnReturn);
-    document.addEventListener("visibilitychange",syncOnReturn);
+    const interval=setInterval(loadAll,3000);
+    const visibility=()=>{if(!document.hidden)loadAll()};
+    window.addEventListener("focus",loadAll);
+    document.addEventListener("visibilitychange",visibility);
 
     return()=>{
       supabase.removeChannel(ch);
-      window.clearTimeout(syncTimer);
-      window.removeEventListener("focus",syncOnReturn);
-      document.removeEventListener("visibilitychange",syncOnReturn);
+      clearInterval(interval);
+      window.removeEventListener("focus",loadAll);
+      document.removeEventListener("visibilitychange",visibility);
     };
 
   useEffect(()=>{
@@ -843,6 +831,7 @@ export default function App(){
   function doLogin(){
     const selected=usuarios.find(u=>u.id===loginUserId);
     if(!selected)return alert("Selecione seu usuário.");
+    if(selected.ativo===false)return alert("Este usuário está inativo e não pode acessar o sistema.");
     if(String(selected.senha||"")!==String(loginPassword||""))return alert("Senha incorreta.");
     setCurrentUserId(selected.id);
     setLoginPassword("");
@@ -1241,11 +1230,58 @@ async function deleteVisit(id){
     await loadAll();
   }
 
-  async function deleteUser(id){
-    if(!isAdmin&&!isGestor)return;
-    if(!confirm("Desativar usuário?"))return;
-    await supabase.from("usuarios").update({ativo:false}).eq("id",id);
+  async function alterarStatusUsuario(usuario){
+    if(!canManageUsers)return;
+
+    const novoStatus = usuario.ativo===false;
+    const hoje=todayISO();
+
+    if(!novoStatus){
+      const vinculadas=visitas.filter(v=>
+        v.pre_atendimento_id===usuario.id ||
+        v.mostrador_id===usuario.id ||
+        v.created_by===usuario.id
+      );
+
+      const futuras=vinculadas.filter(v=>
+        v.data_visita>=hoje &&
+        !["cancelada","reserva_cancelada","concluida","contrato"].includes(v.status)
+      );
+
+      const visitasHoje=futuras.filter(v=>v.data_visita===hoje).length;
+      const visitasFuturas=futuras.filter(v=>v.data_visita>hoje).length;
+      const reservas=futuras.filter(v=>v.status==="reserva").length;
+      const posPendentes=vinculadas.filter(v=>
+        ["concluida","avancou_fechamento"].includes(v.status) &&
+        !v.checklist_ok &&
+        v.data_visita>=hoje
+      ).length;
+
+      const mensagem=[
+        `Deseja tornar ${usuario.nome} inativo?`,
+        "",
+        `Visitas de hoje: ${visitasHoje}`,
+        `Visitas futuras: ${visitasFuturas}`,
+        `Reservas: ${reservas}`,
+        `Pós-visitas pendentes: ${posPendentes}`,
+        "",
+        "O login será bloqueado, mas todo o histórico e os agendamentos serão preservados."
+      ].join("\n");
+
+      if(!window.confirm(mensagem))return;
+    }else{
+      if(!window.confirm(`Deseja reativar o usuário ${usuario.nome}?`))return;
+    }
+
+    const {error}=await supabase
+      .from("usuarios")
+      .update({ativo:novoStatus})
+      .eq("id",usuario.id);
+
+    if(error)return alert(error.message);
+
     await loadAll();
+    alert(novoStatus ? "Usuário reativado com sucesso." : "Usuário inativado com sucesso. O histórico foi preservado.");
   }
 
   function captureLocationForModal(){
@@ -1708,6 +1744,12 @@ const visitasCanceladasBase=visitas
     setTvMode(false);
     try{document.exitFullscreen?.();}catch{}
   }
+
+  const usuariosEquipeFiltrados=usuarios.filter(u=>{
+    if(teamStatusFilter==="ativos")return u.ativo!==false;
+    if(teamStatusFilter==="inativos")return u.ativo===false;
+    return true;
+  });
 
   function goToday(){
     const hoje=new Date();
@@ -2195,18 +2237,49 @@ const visitasCanceladasBase=visitas
                 <p>Para configurar permissões, clique em <b>Editar</b> no usuário desejado e use os botões ON/OFF.</p>
               </div>}
 
-              {canManageUsers&&<button className="btn primary" onClick={()=>setModalUser({nome:"",email:"",tipo:"pre_atendimento",senha:"123456",ativo:true})}><Plus size={16}/> Novo usuário</button>}
+              <div className="team-toolbar">
+                {canManageUsers&&<button className="btn primary" onClick={()=>setModalUser({nome:"",email:"",tipo:"pre_atendimento",senha:"123456",ativo:true})}><Plus size={16}/> Novo usuário</button>}
+
+                <label className="team-filter">
+                  <span>Mostrar</span>
+                  <select value={teamStatusFilter} onChange={e=>setTeamStatusFilter(e.target.value)}>
+                    <option value="ativos">Apenas ativos</option>
+                    <option value="todos">Todos</option>
+                    <option value="inativos">Apenas inativos</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="team-summary">
+                <span><b>{usuarios.filter(u=>u.ativo!==false).length}</b> ativos</span>
+                <span><b>{usuarios.filter(u=>u.ativo===false).length}</b> inativos</span>
+              </div>
+
               <div className="teamgrid">
-                {usuarios.filter(u=>u.ativo!==false).map(u=>
-                  <div className="teamcard" key={u.id}>
-                    <strong>{u.nome}</strong>
-                    <span>{ROLES[u.tipo]||u.tipo}</span>
-                    {canManageUsers&&<div>
-                      <button onClick={()=>setModalUser(u)} className="btn ghost">Editar</button>
-                      <button onClick={()=>deleteUser(u.id)} className="btn danger">Desativar</button>
+                {usuariosEquipeFiltrados.map(u=>
+                  <div className={`teamcard ${u.ativo===false?"teamcard-inativo":""}`} key={u.id}>
+                    <div className="teamcard-head">
+                      <div>
+                        <strong>{u.nome}</strong>
+                        <span>{ROLES[u.tipo]||u.tipo}</span>
+                      </div>
+                      <span className={`user-status ${u.ativo===false?"inactive":"active"}`}>
+                        {u.ativo===false?"Inativo":"Ativo"}
+                      </span>
+                    </div>
+
+                    {canManageUsers&&<div className="teamcard-actions">
+                      <button onClick={()=>setModalUser({...u})} className="btn ghost">Editar</button>
+                      <button
+                        onClick={()=>alterarStatusUsuario(u)}
+                        className={u.ativo===false?"btn success":"btn danger"}
+                      >
+                        {u.ativo===false?"Reativar":"Inativar"}
+                      </button>
                     </div>}
                   </div>
                 )}
+                {!usuariosEquipeFiltrados.length&&<Empty text="Nenhum usuário encontrado neste filtro."/>}
               </div>
             </Card>
           }
@@ -3080,6 +3153,13 @@ function UserModal({u,setU,onClose,onSave,isAdmin,currentUser}){
       }
 
       <Select label="Perfil *" value={u.tipo} onChange={v=>setU({...u,tipo:v,permissoes:u.permissoes||{}})} options={Object.entries(ROLES).map(([k,v])=>[k,v])}/>
+
+      {u.id&&<Select
+        label="Status do usuário *"
+        value={u.ativo===false?"inativo":"ativo"}
+        onChange={v=>setU({...u,ativo:v==="ativo"})}
+        options={[["ativo","Ativo"],["inativo","Inativo"]]}
+      />}
 
       {adminAtual&&<div className="permissions-box">
         <h3>Painel de permissões</h3>
