@@ -360,6 +360,7 @@ export default function App(){
   const seenNotificationsRef = useRef(new Set());
   const touchStart=useRef(0);
   const agendaConflictConfirmedRef=useRef(new Set());
+  const realtimeRefreshTimerRef=useRef(null);
 
   const user=usuarios.find(u=>u.id===currentUserId);
   const isAdmin=user?.tipo==="admin";
@@ -397,11 +398,33 @@ export default function App(){
   const contratosUsers=usuarios.filter(u=>u.tipo==="contratos"&&u.ativo!==false);
 
 
+  const loadAllVisitas=useCallback(async()=>{
+    const pageSize=1000;
+    const allRows=[];
+
+    for(let from=0;;from+=pageSize){
+      const {data,error}=await supabase
+        .from("visitas")
+        .select("*")
+        .order("data_visita",{ascending:true})
+        .order("horario_visita",{ascending:true})
+        .range(from,from+pageSize-1);
+
+      if(error)return {data:null,error};
+
+      const rows=data||[];
+      allRows.push(...rows);
+      if(rows.length<pageSize)break;
+    }
+
+    return {data:allRows,error:null};
+  },[]);
+
   const loadAll=useCallback(async()=>{
     try{
       const [u,v,n,a,ft,bq]=await Promise.all([
         supabase.from("usuarios").select("*").order("created_at",{ascending:true}),
-        supabase.from("visitas").select("*").order("data_visita",{ascending:true}).order("horario_visita",{ascending:true}),
+        loadAllVisitas(),
         supabase.from("notificacoes").select("*").order("created_at",{ascending:false}).limit(300),
         supabase.from("acoes_visita").select("*").order("created_at",{ascending:false}).limit(800),
         supabase.from("fotos_visita").select("*").order("created_at",{ascending:false}).limit(800),
@@ -443,7 +466,7 @@ export default function App(){
     } finally{
       setLoading(false);
     }
-  },[currentUserId]);
+  },[currentUserId,loadAllVisitas]);
 
   useEffect(()=>{loadAll()},[loadAll]);
 
@@ -518,32 +541,37 @@ export default function App(){
   },[user?.id,isMostrador,visitas]);
 
   useEffect(()=>{
-    if(view!=="central")return;
-    const interval=setInterval(()=>loadAll(),15000);
-    return()=>clearInterval(interval);
-  },[view,loadAll]);
+    const scheduleRefresh=()=>{
+      if(realtimeRefreshTimerRef.current)clearTimeout(realtimeRefreshTimerRef.current);
+      realtimeRefreshTimerRef.current=setTimeout(()=>{
+        realtimeRefreshTimerRef.current=null;
+        loadAll();
+      },250);
+    };
 
-  useEffect(()=>{
     const ch=supabase.channel("castan-realtime-global")
-      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},loadAll)
-      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},loadAll)
+      .on("postgres_changes",{event:"*",schema:"public",table:"usuarios"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"visitas"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"notificacoes"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},scheduleRefresh)
       .subscribe();
 
-    const interval=setInterval(loadAll,3000);
     const visibility=()=>{if(!document.hidden)loadAll()};
     window.addEventListener("focus",loadAll);
     document.addEventListener("visibilitychange",visibility);
 
     return()=>{
       supabase.removeChannel(ch);
-      clearInterval(interval);
+      if(realtimeRefreshTimerRef.current){
+        clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current=null;
+      }
       window.removeEventListener("focus",loadAll);
       document.removeEventListener("visibilitychange",visibility);
     };
+  },[loadAll]);
 
   useEffect(()=>{
     const currentScripts = () =>
@@ -599,8 +627,6 @@ export default function App(){
       return()=>clearTimeout(t);
     }
   },[updateAvailable,modalVisit,modalUser]);
-
-  },[loadAll]);
 
   function getUser(id){return usuarios.find(u=>u.id===id)}
   function colorForUser(id){
