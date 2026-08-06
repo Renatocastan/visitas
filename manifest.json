@@ -1,1 +1,10 @@
-{"headers":[{"source":"/(.*)","headers":[{"key":"Cache-Control","value":"no-store, max-age=0"}]}],"rewrites":[{"source":"/(.*)","destination":"/"}]}
+{
+  "name": "Castan Visitas",
+  "short_name": "Castan",
+  "theme_color": "#123B63",
+  "background_color": "#FFFFFF",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "/",
+  "scope": "/"
+}
