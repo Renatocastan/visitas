@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.3.1-revisitas";
+const APP_VERSION = "Castan Realtime v3.3.2-revisita-alerta-corrigido";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -907,13 +907,18 @@ export default function App(){
       .sort((a,b)=>visitaMoment(b)-visitaMoment(a));
   }
 
-  function verificarRevisitaNoFormulario(candidate){
-    if(!candidate || candidate.somenteLeitura)return;
+  function verificarRevisitaNoFormulario(candidate, {forcar=false}={}){
+    if(!candidate || candidate.somenteLeitura)return {encontrou:false};
+
     const key=revisitaKey(candidate);
-    if(!key || candidate.revisita_alertado_chave===key)return;
+    if(!key)return {encontrou:false};
+
+    if(!forcar && candidate.revisita_alertado_chave===key){
+      return {encontrou:Boolean(candidate.revisita), jaAlertado:true};
+    }
 
     const anteriores=visitasAnterioresMesmoClienteImovel(candidate);
-    if(!anteriores.length)return;
+    if(!anteriores.length)return {encontrou:false};
 
     const ultima=anteriores[0];
     const dataUltima=ultima.data_visita ? ultima.data_visita.split('-').reverse().join('/') : '-';
@@ -926,20 +931,68 @@ export default function App(){
       `Mostrador: ${getUser(ultima.mostrador_id)?.nome||'-'}`,
       `Status: ${statusLabel(ultima.status)}`,
       '',
+      `Esta será a visita nº ${anteriores.length+1} deste cliente neste imóvel.`,
+      '',
       'Deseja marcar este novo agendamento como REVISITA?'
     ].join('\\n');
 
     const marcar=window.confirm(msg);
+
     setModalVisit(prev=>prev ? {
       ...prev,
       revisita:marcar ? true : Boolean(prev.revisita),
       numero_revisita:marcar ? Math.max(2,anteriores.length+1) : prev.numero_revisita,
       revisita_alertado_chave:key
     } : prev);
+
+    return {
+      encontrou:true,
+      marcar,
+      key,
+      numero:Math.max(2,anteriores.length+1),
+      anteriores
+    };
   }
 
   async function saveVisit(){
-    const f={...modalVisit};
+    let f={...modalVisit};
+
+    // Proteção adicional: se telefone + imóvel já existirem no histórico e o
+    // formulário ainda não tiver sido analisado, verifica antes de salvar.
+    const chaveRevisitaAtual=revisitaKey(f);
+    const anterioresAntesSalvar=visitasAnterioresMesmoClienteImovel(f);
+
+    if(
+      !f.id &&
+      chaveRevisitaAtual &&
+      anterioresAntesSalvar.length>0 &&
+      f.revisita_alertado_chave!==chaveRevisitaAtual
+    ){
+      const ultima=anterioresAntesSalvar[0];
+      const dataUltima=ultima.data_visita ? ultima.data_visita.split('-').reverse().join('/') : '-';
+      const marcar=window.confirm([
+        '⚠️ REVISITA IDENTIFICADA ANTES DE SALVAR.',
+        '',
+        'Este cliente já visitou este imóvel anteriormente.',
+        `Última visita: ${dataUltima} às ${String(ultima.horario_visita||'').slice(0,5)}`,
+        `Cliente: ${ultima.cliente_nome||f.cliente_nome||'-'}`,
+        `Imóvel: ${ultima.codigo_imovel||f.codigo_imovel||'-'}`,
+        `Mostrador: ${getUser(ultima.mostrador_id)?.nome||'-'}`,
+        '',
+        `Esta será a visita nº ${anterioresAntesSalvar.length+1}.`,
+        '',
+        'Deseja marcar este agendamento como REVISITA?'
+      ].join('\\n'));
+
+      f={
+        ...f,
+        revisita:marcar ? true : Boolean(f.revisita),
+        numero_revisita:marcar ? Math.max(2,anterioresAntesSalvar.length+1) : f.numero_revisita,
+        revisita_alertado_chave:chaveRevisitaAtual
+      };
+      setModalVisit(prev=>prev ? {...prev,...f} : prev);
+    }
+
     const anterioresRevisita=visitasAnterioresMesmoClienteImovel(f);
     const revisitaFinal=Boolean(f.revisita);
     const numeroRevisitaFinal=revisitaFinal ? Math.max(2, Number(f.numero_revisita||0), anterioresRevisita.length+1) : null;
@@ -3185,12 +3238,24 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
       </div>
 
       <div className="form">
-        <Field label="Código do imóvel *" value={f.codigo_imovel} disabled={limited} onChange={v=>setF({...f,codigo_imovel:v,revisita_alertado_chave:""})} onBlur={()=>onCheckRevisit?.(f)}/>
+        <Field
+          label="Código do imóvel *"
+          value={f.codigo_imovel}
+          disabled={limited}
+          onChange={v=>setF({...f,codigo_imovel:v,revisita_alertado_chave:""})}
+          onBlur={valorAtual=>onCheckRevisit?.({...f,codigo_imovel:valorAtual,revisita_alertado_chave:""})}
+        />
         <Field label="Endereço do imóvel *" value={f.endereco_imovel} disabled={limited} onChange={v=>setF({...f,endereco_imovel:v})}/>
         <Field label="Nome do proprietário *" value={f.proprietario_nome} disabled={limited} onChange={v=>setF({...f,proprietario_nome:v})}/>
         <Field label="Contato do proprietário *" value={f.proprietario_contato} disabled={limited} onChange={v=>setF({...f,proprietario_contato:v})}/>
         <Field label="Nome do cliente *" value={f.cliente_nome} disabled={limited} onChange={v=>setF({...f,cliente_nome:v})}/>
-        <Field label="Contato do cliente *" value={f.cliente_contato} disabled={limited} onChange={v=>setF({...f,cliente_contato:v,revisita_alertado_chave:""})} onBlur={()=>onCheckRevisit?.(f)}/>
+        <Field
+          label="Contato do cliente *"
+          value={f.cliente_contato}
+          disabled={limited}
+          onChange={v=>setF({...f,cliente_contato:v,revisita_alertado_chave:""})}
+          onBlur={valorAtual=>onCheckRevisit?.({...f,cliente_contato:valorAtual,revisita_alertado_chave:""})}
+        />
         <label className="check revisita-check">
           <input
             type="checkbox"
@@ -3199,6 +3264,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
             onChange={e=>setF({...f,revisita:e.target.checked,numero_revisita:e.target.checked?(Number(f.numero_revisita)||2):null})}
           /> REVISITA
         </label>
+        <small className="revisita-help">O sistema verifica automaticamente telefone + código do imóvel. Se necessário, o pré também pode marcar manualmente.</small>
         {f.revisita&&<div className="alerta-revisita">↩️ Este agendamento será contabilizado como revisita{f.numero_revisita?` nº ${f.numero_revisita}`:""}.</div>}
 
         <Field label="Local da chave *" value={f.local_chave||""} disabled={limited} onChange={v=>setF({...f,local_chave:v})}/>
@@ -3391,7 +3457,16 @@ function UserModal({u,setU,onClose,onSave,isAdmin,currentUser}){
 }
 
 function Field({label,value,onChange,onBlur,type="text",disabled=false}){
-  return <label><span>{label}</span><input type={type} value={value||""} disabled={disabled} onChange={e=>onChange(e.target.value)} onBlur={onBlur}/></label>;
+  return <label>
+    <span>{label}</span>
+    <input
+      type={type}
+      value={value||""}
+      disabled={disabled}
+      onChange={e=>onChange(e.target.value)}
+      onBlur={e=>onBlur?.(e.currentTarget.value)}
+    />
+  </label>;
 }
 
 function Select({label,value,onChange,options,disabled=false}){

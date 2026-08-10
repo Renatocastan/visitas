@@ -69773,3 +69773,13 @@
   font-weight:900;
   margin-bottom:7px;
 }
+
+
+/* v3.3.2 — correção do alerta automático de revisita */
+.revisita-help{
+  display:block;
+  margin:-4px 0 8px;
+  color:#64748b;
+  font-size:12px;
+  font-weight:700;
+}
