@@ -69783,3 +69783,15 @@
   font-size:12px;
   font-weight:700;
 }
+
+
+/* v3.3.3 — relatório de visitas por imóvel */
+.visitas-por-imovel-table th:nth-child(2),
+.visitas-por-imovel-table td:nth-child(2){
+  text-align:center;
+  width:180px;
+}
+
+.visitas-por-imovel-table td:first-child strong{
+  color:#123B63;
+}

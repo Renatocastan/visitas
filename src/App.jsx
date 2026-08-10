@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.3.2-revisita-alerta-corrigido";
+const APP_VERSION = "Castan Realtime v3.3.3-relatorio-visitas-por-imovel";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -1572,6 +1572,16 @@ async function deleteVisit(id){
   const reportVisits=visitas.filter(v=>v.data_visita>=reportStart && v.data_visita<=reportEnd);
 
   const visitasComerciaisRel=reportVisits.filter(v=>!['reserva','reserva_cancelada','cancelada'].includes(v.status));
+
+  const visitasPorImovelRows=Object.values(
+    visitasComerciaisRel.reduce((acc,v)=>{
+      const codigo=String(v.codigo_imovel||"").trim();
+      if(!codigo)return acc;
+      if(!acc[codigo])acc[codigo]={codigo,total:0};
+      acc[codigo].total+=1;
+      return acc;
+    },{})
+  ).sort((a,b)=>b.total-a.total || a.codigo.localeCompare(b.codigo));
   const revisitasNoPeriodo=visitasComerciaisRel.filter(v=>{
     if(v.revisita)return true;
     const key=revisitaKey(v);
@@ -2408,6 +2418,12 @@ const visitasCanceladasBase=visitas
               </section>
 
               <section className="report-section">
+                <h2>Visitas por Imóvel</h2>
+                <p className="hint">Mostra quantas visitas comerciais cada imóvel recebeu no período selecionado. Reservas e cancelamentos não entram nesta contagem.</p>
+                <VisitasPorImovelTable rows={visitasPorImovelRows}/>
+              </section>
+
+              <section className="report-section">
                 <h2>Análise de Cancelamentos</h2>
                 <CancelReasonTable rows={motivoCancelamentoRows} total={canceladasRel} outrosDetalhes={outrosCancelamentoDetalhes}/>
               </section>
@@ -2758,6 +2774,27 @@ function RevisitTable({rows}){
       <tbody>{rows.map(r=><tr key={r.key}>
         <td>{r.cliente}</td><td>{r.telefone}</td><td>{r.imovel}</td><td>{r.endereco}</td><td>{r.visitas_periodo}</td><td>{r.total_historico}</td><td>{r.revisitas_periodo}</td><td>{r.primeira?String(r.primeira).split('-').reverse().join('/'):'-'}</td><td>{r.ultima?String(r.ultima).split('-').reverse().join('/'):'-'}</td>
       </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
+function VisitasPorImovelTable({rows}){
+  return <div className="tablewrap visitas-por-imovel-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Código do imóvel</th>
+          <th>Número de visitas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length?rows.map(r=>
+          <tr key={r.codigo}>
+            <td><strong>{r.codigo}</strong></td>
+            <td>{r.total}</td>
+          </tr>
+        ):<tr><td colSpan="2"><Empty text="Nenhuma visita encontrada no período selecionado."/></td></tr>}
+      </tbody>
     </table>
   </div>;
 }
