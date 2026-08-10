@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.3.3-relatorio-visitas-por-imovel";
+const APP_VERSION = "Castan Realtime v3.3.4-relatorio-imovel-exportavel";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -1873,7 +1873,32 @@ const visitasCanceladasBase=visitas
     .filter(v=>v.status==="avancou_fechamento" && Boolean(v.checklist_ok))
     .sort((a,b)=>(String(b.data_visita||"")+String(b.horario_visita||"")).localeCompare(String(a.data_visita||"")+String(a.horario_visita||"")));
 
-  function exportReport(){
+  
+  function exportVisitasPorImovel(){
+    const rows=[
+      ["Código do imóvel","Número de visitas"],
+      ...visitasPorImovelRows.map(r=>[r.codigo,r.total])
+    ];
+
+    const csv=rows.map(row=>
+      row.map(value=>{
+        const text=String(value??"").replace(/"/g,'""');
+        return `"${text}"`;
+      }).join(";")
+    ).join("\n");
+
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`visitas-por-imovel-${reportStart}-a-${reportEnd}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+function exportReport(){
     const rows=[
       ["Dashboard Executivo"],
       ["Período",reportStart,reportEnd],
@@ -2417,10 +2442,14 @@ const visitasCanceladasBase=visitas
                 <ReportTable rows={reportByMostrador}/>
               </section>
 
-              <section className="report-section">
-                <h2>Visitas por Imóvel</h2>
-                <p className="hint">Mostra quantas visitas comerciais cada imóvel recebeu no período selecionado. Reservas e cancelamentos não entram nesta contagem.</p>
-                <VisitasPorImovelTable rows={visitasPorImovelRows}/>
+              <section className="report-section report-export-card">
+                <div>
+                  <h2>Visitas por Imóvel</h2>
+                  <p className="hint">Exporta a relação de imóveis e quantidade de visitas comerciais no período selecionado. Reservas e cancelamentos não entram na contagem.</p>
+                </div>
+                <button className="btn primary" onClick={exportVisitasPorImovel}>
+                  Exportar Visitas por Imóvel
+                </button>
               </section>
 
               <section className="report-section">
@@ -2774,27 +2803,6 @@ function RevisitTable({rows}){
       <tbody>{rows.map(r=><tr key={r.key}>
         <td>{r.cliente}</td><td>{r.telefone}</td><td>{r.imovel}</td><td>{r.endereco}</td><td>{r.visitas_periodo}</td><td>{r.total_historico}</td><td>{r.revisitas_periodo}</td><td>{r.primeira?String(r.primeira).split('-').reverse().join('/'):'-'}</td><td>{r.ultima?String(r.ultima).split('-').reverse().join('/'):'-'}</td>
       </tr>)}</tbody>
-    </table>
-  </div>;
-}
-
-function VisitasPorImovelTable({rows}){
-  return <div className="tablewrap visitas-por-imovel-table">
-    <table>
-      <thead>
-        <tr>
-          <th>Código do imóvel</th>
-          <th>Número de visitas</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length?rows.map(r=>
-          <tr key={r.codigo}>
-            <td><strong>{r.codigo}</strong></td>
-            <td>{r.total}</td>
-          </tr>
-        ):<tr><td colSpan="2"><Empty text="Nenhuma visita encontrada no período selecionado."/></td></tr>}
-      </tbody>
     </table>
   </div>;
 }

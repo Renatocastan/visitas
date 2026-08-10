@@ -69785,13 +69785,31 @@
 }
 
 
-/* v3.3.3 — relatório de visitas por imóvel */
-.visitas-por-imovel-table th:nth-child(2),
-.visitas-por-imovel-table td:nth-child(2){
-  text-align:center;
-  width:180px;
+
+
+/* v3.3.4 — relatório de visitas por imóvel somente exportável */
+.report-export-card{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:20px;
 }
 
-.visitas-por-imovel-table td:first-child strong{
-  color:#123B63;
+.report-export-card > div{
+  flex:1;
+}
+
+.report-export-card .btn{
+  white-space:nowrap;
+}
+
+@media(max-width:760px){
+  .report-export-card{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .report-export-card .btn{
+    width:100%;
+  }
 }
