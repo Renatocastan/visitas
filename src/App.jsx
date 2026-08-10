@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.3.0-usuarios-ativos-inativos";
+const APP_VERSION = "Castan Realtime v3.3.1-revisitas";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -247,6 +247,24 @@ const mapLink = (lat,lng) => lat && lng ? `https://www.google.com/maps?q=${lat},
 const wazeAddressLink = address => address ? `https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes` : "";
 const wazeLink = (lat, lng) => lat && lng ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes` : "";
 const onlyDigits=v=>String(v||"").replace(/\D/g,"");
+const normalizeClientePhone = value => {
+  let p=onlyDigits(value);
+  if(p.startsWith("55") && p.length>=12)p=p.slice(2);
+  if(p.startsWith("0"))p=p.slice(1);
+  return p;
+};
+const normalizeCodigoImovel = value => String(value||"").trim().toUpperCase().replace(/\s+/g,"");
+const revisitaKey = v => {
+  const phone=normalizeClientePhone(v?.cliente_contato);
+  const codigo=normalizeCodigoImovel(v?.codigo_imovel);
+  return phone&&codigo ? `${phone}|${codigo}` : "";
+};
+const visitaMoment = v => {
+  const d=String(v?.data_visita||"");
+  const h=String(v?.horario_visita||"00:00").slice(0,5);
+  const dt=new Date(`${d}T${h}:00`);
+  return Number.isNaN(dt.getTime()) ? new Date(0) : dt;
+};
 const whatsappClienteLink=v=>{
  let p=onlyDigits(v?.cliente_contato); if(!p)return "";
  if(!p.startsWith("55")) p="55"+p;
@@ -290,7 +308,10 @@ function emptyVisit(user, preUsers, mostradores){
     atualizar_fotos:false,
     checklist_ok:false,
     motivo_cancelamento:"",
-    motivo_cancelamento_outros:""
+    motivo_cancelamento_outros:"",
+    revisita:false,
+    numero_revisita:null,
+    revisita_alertado_chave:""
   };
 }
 
@@ -870,8 +891,58 @@ export default function App(){
     setView("inicio");
   }
 
+  function visitasAnterioresMesmoClienteImovel(f){
+    const key=revisitaKey(f);
+    if(!key)return [];
+    const atualMoment=visitaMoment(f);
+    return visitas
+      .filter(v=>v.id!==f.id)
+      .filter(v=>!['cancelada','reserva_cancelada','reserva'].includes(v.status))
+      .filter(v=>revisitaKey(v)===key)
+      .filter(v=>{
+        if(!f.data_visita)return true;
+        const vm=visitaMoment(v);
+        return vm<=atualMoment;
+      })
+      .sort((a,b)=>visitaMoment(b)-visitaMoment(a));
+  }
+
+  function verificarRevisitaNoFormulario(candidate){
+    if(!candidate || candidate.somenteLeitura)return;
+    const key=revisitaKey(candidate);
+    if(!key || candidate.revisita_alertado_chave===key)return;
+
+    const anteriores=visitasAnterioresMesmoClienteImovel(candidate);
+    if(!anteriores.length)return;
+
+    const ultima=anteriores[0];
+    const dataUltima=ultima.data_visita ? ultima.data_visita.split('-').reverse().join('/') : '-';
+    const msg=[
+      '⚠️ ESTE CLIENTE JÁ VISITOU ESTE IMÓVEL.',
+      '',
+      `Última visita: ${dataUltima} às ${String(ultima.horario_visita||'').slice(0,5)}`,
+      `Cliente: ${ultima.cliente_nome||candidate.cliente_nome||'-'}`,
+      `Imóvel: ${ultima.codigo_imovel||candidate.codigo_imovel||'-'}`,
+      `Mostrador: ${getUser(ultima.mostrador_id)?.nome||'-'}`,
+      `Status: ${statusLabel(ultima.status)}`,
+      '',
+      'Deseja marcar este novo agendamento como REVISITA?'
+    ].join('\\n');
+
+    const marcar=window.confirm(msg);
+    setModalVisit(prev=>prev ? {
+      ...prev,
+      revisita:marcar ? true : Boolean(prev.revisita),
+      numero_revisita:marcar ? Math.max(2,anteriores.length+1) : prev.numero_revisita,
+      revisita_alertado_chave:key
+    } : prev);
+  }
+
   async function saveVisit(){
     const f={...modalVisit};
+    const anterioresRevisita=visitasAnterioresMesmoClienteImovel(f);
+    const revisitaFinal=Boolean(f.revisita);
+    const numeroRevisitaFinal=revisitaFinal ? Math.max(2, Number(f.numero_revisita||0), anterioresRevisita.length+1) : null;
 
     const isReservaAgenda = f.status==="reserva" || f.status==="reserva_cancelada";
 
@@ -1026,6 +1097,8 @@ export default function App(){
       checklist_ok:Boolean(f.checklist_ok),
       motivo_cancelamento:f.status==="cancelada"?(f.motivo_cancelamento||null):null,
       motivo_cancelamento_outros:f.status==="cancelada"&&f.motivo_cancelamento==="outros"?(f.motivo_cancelamento_outros||null):null,
+      revisita:revisitaFinal,
+      numero_revisita:numeroRevisitaFinal,
       created_by:f.created_by||user?.id||null
     };
 
@@ -1075,6 +1148,19 @@ export default function App(){
             `${payload.codigo_imovel} - ${payload.cliente_nome} virou contrato.`
           );
         }
+      }
+
+      if(!old?.revisita && payload.revisita){
+        await supabase.from("acoes_visita").insert({
+          created_at:nowISO(),
+          horario_brasil:horarioBrasil(),
+          visita_id:f.id,
+          usuario_id:user?.id,
+          tipo_acao:"marcacao_revisita",
+          status_anterior:old?.status||null,
+          status_novo:payload.status,
+          observacao:`Marcada como revisita nº ${payload.numero_revisita||2}.`
+        });
       }
 
       if(!old?.atualizar_fotos && payload.atualizar_fotos){
@@ -1129,6 +1215,18 @@ export default function App(){
         status_novo:payload.status,
         observacao:payload.observacao
       });
+
+      if(payload.revisita){
+        await supabase.from("acoes_visita").insert({
+          created_at:nowISO(),
+          horario_brasil:horarioBrasil(),
+          visita_id:data.id,
+          usuario_id:user?.id,
+          tipo_acao:"marcacao_revisita",
+          status_novo:payload.status,
+          observacao:`Agendamento criado como revisita nº ${payload.numero_revisita||2}.`
+        });
+      }
 
       await notifyMany(
         [payload.mostrador_id,payload.pre_atendimento_id],
@@ -1420,6 +1518,43 @@ async function deleteVisit(id){
 
   const reportVisits=visitas.filter(v=>v.data_visita>=reportStart && v.data_visita<=reportEnd);
 
+  const visitasComerciaisRel=reportVisits.filter(v=>!['reserva','reserva_cancelada','cancelada'].includes(v.status));
+  const revisitasNoPeriodo=visitasComerciaisRel.filter(v=>{
+    if(v.revisita)return true;
+    const key=revisitaKey(v);
+    if(!key)return false;
+    return visitas.some(other=>
+      other.id!==v.id &&
+      !['reserva','reserva_cancelada','cancelada'].includes(other.status) &&
+      revisitaKey(other)===key &&
+      visitaMoment(other)<visitaMoment(v)
+    );
+  });
+  const revisitasRel=revisitasNoPeriodo.length;
+  const visitasUnicasRel=Math.max(0,visitasComerciaisRel.length-revisitasRel);
+
+  const revisitaKeysPeriodo=[...new Set(revisitasNoPeriodo.map(v=>revisitaKey(v)).filter(Boolean))];
+  const revisitaReportRows=revisitaKeysPeriodo.map(key=>{
+    const historico=visitas
+      .filter(v=>!['reserva','reserva_cancelada','cancelada'].includes(v.status))
+      .filter(v=>revisitaKey(v)===key)
+      .sort((a,b)=>visitaMoment(a)-visitaMoment(b));
+    const noPeriodo=historico.filter(v=>v.data_visita>=reportStart&&v.data_visita<=reportEnd);
+    const base=noPeriodo[noPeriodo.length-1]||historico[historico.length-1]||{};
+    return {
+      key,
+      cliente:base.cliente_nome||'-',
+      telefone:base.cliente_contato||'-',
+      imovel:base.codigo_imovel||'-',
+      endereco:base.endereco_imovel||'-',
+      visitas_periodo:noPeriodo.length,
+      total_historico:historico.length,
+      revisitas_periodo:noPeriodo.filter(v=>v.revisita || historico.findIndex(h=>h.id===v.id)>0).length,
+      primeira:historico[0]?.data_visita||'',
+      ultima:historico[historico.length-1]?.data_visita||''
+    };
+  }).sort((a,b)=>b.total_historico-a.total_historico || a.cliente.localeCompare(b.cliente));
+
   const statusCount = id => reportVisits.filter(v=>v.status===id).length;
   const totalRelatorio = reportVisits.length;
   const agendadasRel = statusCount("agendada");
@@ -1695,6 +1830,9 @@ const visitasCanceladasBase=visitas
 
     rows.push([],["Motivos de cancelamento"],["Motivo","Quantidade","Percentual"]);
     motivoCancelamentoRows.forEach(r=>rows.push([r.motivo,r.total,r.percentual]));
+
+    rows.push([],["Revisitas"],["Cliente","Telefone","Imóvel","Endereço","Visitas no período","Total histórico","Revisitas no período","Primeira visita","Última visita"]);
+    revisitaReportRows.forEach(r=>rows.push([r.cliente,r.telefone,r.imovel,r.endereco,r.visitas_periodo,r.total_historico,r.revisitas_periodo,r.primeira,r.ultima]));
 
     rows.push([],["Fechamento"],["Usuário","Pós OK","Avançou fechamento","Contratos","Conversão"]);
     fechamentoReportRows.forEach(r=>rows.push([r.nome,r.pos_ok,r.fechamento,r.contratos,r.conversao]));
@@ -2189,6 +2327,8 @@ const visitasCanceladasBase=visitas
                 <h2>Dashboard Executivo</h2>
                 <div className="report-kpis">
                   <Metric title="Total de visitas" value={totalRelatorio}/>
+                  <Metric title="Visitas únicas" value={visitasUnicasRel}/>
+                  <Metric title="Revisitas" value={revisitasRel}/>
                   <Metric title="Agendadas" value={agendadasRel}/>
                   <Metric title="Confirmadas" value={confirmadasRel}/>
                   <Metric title="Canceladas" value={canceladasRel}/>
@@ -2222,6 +2362,17 @@ const visitasCanceladasBase=visitas
               <section className="report-section">
                 <h2>Análise de Cancelamento de Reservas de Agenda</h2>
                 <CancelReasonTable rows={motivoReservaCanceladaRows} total={reservasCanceladasRel} outrosDetalhes={outrosReservaCanceladaDetalhes}/>
+              </section>
+
+              <section className="report-section">
+                <h2>Análise de Revisitas</h2>
+                <p className="hint">Mostra clientes que retornaram ao mesmo imóvel. A identificação usa telefone do cliente + código do imóvel.</p>
+                <div className="report-kpis">
+                  <Metric title="Revisitas no período" value={revisitasRel}/>
+                  <Metric title="Visitas únicas" value={visitasUnicasRel}/>
+                  <Metric title="Clientes/imóveis revisitados" value={revisitaReportRows.length}/>
+                </div>
+                <RevisitTable rows={revisitaReportRows}/>
               </section>
 
               <section className="report-section">
@@ -2338,6 +2489,7 @@ const visitasCanceladasBase=visitas
         getUser={getUser}
         onCaptureLocation={captureLocationForModal}
         onUploadFiles={uploadVisitFiles}
+        onCheckRevisit={verificarRevisitaNoFormulario}
       />
     }
 
@@ -2543,6 +2695,20 @@ function CentralOperacional({visitasHoje,ativas,concluidas,canceladas,reservas,f
   </section>;
 }
 
+function RevisitTable({rows}){
+  if(!rows?.length)return <Empty text="Nenhuma revisita encontrada no período."/>;
+  return <div className="tablewrap">
+    <table>
+      <thead><tr>
+        <th>Cliente</th><th>Telefone</th><th>Imóvel</th><th>Endereço</th><th>Visitas no período</th><th>Total histórico</th><th>Revisitas no período</th><th>Primeira visita</th><th>Última visita</th>
+      </tr></thead>
+      <tbody>{rows.map(r=><tr key={r.key}>
+        <td>{r.cliente}</td><td>{r.telefone}</td><td>{r.imovel}</td><td>{r.endereco}</td><td>{r.visitas_periodo}</td><td>{r.total_historico}</td><td>{r.revisitas_periodo}</td><td>{r.primeira?String(r.primeira).split('-').reverse().join('/'):'-'}</td><td>{r.ultima?String(r.ultima).split('-').reverse().join('/'):'-'}</td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
 function Metric({title,value,onClick}){return <div className={`metric ${onClick?"metric-clickable":""}`} onClick={onClick}><strong>{value}</strong><span>{title}</span></div>}
 function Card({title,children}){return <section className="card">{title&&<h2>{title}</h2>}{children}</section>}
 function Empty({text}){return <div className="empty">{text}</div>}
@@ -2567,6 +2733,7 @@ function Filters({preUsers,mostradores,filterPre,setFilterPre,filterMostrador,se
 
 function VisitCard({v,getUser,colorForUser,onClick}){
   return <div className={`visitcard ${v.status==="cancelada"?"calendar-cancelada":""}`} style={{borderLeftColor:v.status==="cancelada"?"#B91C1C":colorForUser(v)}} onClick={onClick}>
+    {v.revisita&&<div className="revisita-badge">↩ REVISITA{v.numero_revisita?` #${v.numero_revisita}`:""}</div>}
     <div>
       <strong>{v.data_visita?`${v.data_visita.split("-").reverse().join("/")} • `:""}{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel} — {v.cliente_nome}</strong>
       <p>Endereço: {v.endereco_imovel||"-"}</p>
@@ -2995,7 +3162,7 @@ function ActionTable({acoes,visitas,getUser,reportStart,reportEnd}){
   </div>;
 }
 
-function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGestor,isMostrador,isFechamento,isContratos,canDeleteVisits,canStatusAvancouFechamento,canStatusPosOk,canStatusContrato,preUsers,mostradores,editing,acoes=[],fotos=[],getUser,onCaptureLocation,onUploadFiles}){
+function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGestor,isMostrador,isFechamento,isContratos,canDeleteVisits,canStatusAvancouFechamento,canStatusPosOk,canStatusContrato,preUsers,mostradores,editing,acoes=[],fotos=[],getUser,onCaptureLocation,onUploadFiles,onCheckRevisit}){
   const readOnly = Boolean(f.somenteLeitura);
   const limited=readOnly;
   const historico=(acoes||[]).filter(a=>a.visita_id===f.id);
@@ -3018,12 +3185,22 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
       </div>
 
       <div className="form">
-        <Field label="Código do imóvel *" value={f.codigo_imovel} disabled={limited} onChange={v=>setF({...f,codigo_imovel:v})}/>
+        <Field label="Código do imóvel *" value={f.codigo_imovel} disabled={limited} onChange={v=>setF({...f,codigo_imovel:v,revisita_alertado_chave:""})} onBlur={()=>onCheckRevisit?.(f)}/>
         <Field label="Endereço do imóvel *" value={f.endereco_imovel} disabled={limited} onChange={v=>setF({...f,endereco_imovel:v})}/>
         <Field label="Nome do proprietário *" value={f.proprietario_nome} disabled={limited} onChange={v=>setF({...f,proprietario_nome:v})}/>
         <Field label="Contato do proprietário *" value={f.proprietario_contato} disabled={limited} onChange={v=>setF({...f,proprietario_contato:v})}/>
         <Field label="Nome do cliente *" value={f.cliente_nome} disabled={limited} onChange={v=>setF({...f,cliente_nome:v})}/>
-        <Field label="Contato do cliente *" value={f.cliente_contato} disabled={limited} onChange={v=>setF({...f,cliente_contato:v})}/>
+        <Field label="Contato do cliente *" value={f.cliente_contato} disabled={limited} onChange={v=>setF({...f,cliente_contato:v,revisita_alertado_chave:""})} onBlur={()=>onCheckRevisit?.(f)}/>
+        <label className="check revisita-check">
+          <input
+            type="checkbox"
+            checked={Boolean(f.revisita)}
+            disabled={limited}
+            onChange={e=>setF({...f,revisita:e.target.checked,numero_revisita:e.target.checked?(Number(f.numero_revisita)||2):null})}
+          /> REVISITA
+        </label>
+        {f.revisita&&<div className="alerta-revisita">↩️ Este agendamento será contabilizado como revisita{f.numero_revisita?` nº ${f.numero_revisita}`:""}.</div>}
+
         <Field label="Local da chave *" value={f.local_chave||""} disabled={limited} onChange={v=>setF({...f,local_chave:v})}/>
         
         <Select label="Mostrador *" value={f.mostrador_id} disabled={limited} onChange={v=>setF({...f,mostrador_id:v})} options={mostradores.map(u=>[u.id,u.nome])}/>
@@ -3213,8 +3390,8 @@ function UserModal({u,setU,onClose,onSave,isAdmin,currentUser}){
   </div>;
 }
 
-function Field({label,value,onChange,type="text",disabled=false}){
-  return <label><span>{label}</span><input type={type} value={value||""} disabled={disabled} onChange={e=>onChange(e.target.value)}/></label>;
+function Field({label,value,onChange,onBlur,type="text",disabled=false}){
+  return <label><span>{label}</span><input type={type} value={value||""} disabled={disabled} onChange={e=>onChange(e.target.value)} onBlur={onBlur}/></label>;
 }
 
 function Select({label,value,onChange,options,disabled=false}){
