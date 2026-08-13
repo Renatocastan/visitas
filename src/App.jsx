@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.4.2-fotos-formulario-horarios";
+const APP_VERSION = "Castan Realtime v3.4.3-hotfix-pagina-branca";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
 const TIPO_FOTO_ANUNCIO = "foto_anuncio";
+const isFotoAnuncio = v => v?.tipo_agendamento===TIPO_FOTO_ANUNCIO;
 const VISITOWN_LABEL = "Visitown";
 const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
 
@@ -706,10 +707,7 @@ export default function App(){
   },[updateAvailable,modalVisit,modalUser]);
 
   function getUser(id){return usuarios.find(u=>u.id===id)}
-  const isFotoAnuncio = v => v?.tipo_agendamento===TIPO_FOTO_ANUNCIO;
-const tipoAgendamentoLabel = v => isFotoAnuncio(v) ? "Fotos para anúncio" : "Visita";
-
-function isVisitown(v){
+  function isVisitown(v){
     return isVisitownRegistro(v);
   }
   function mostradorLabel(v){
