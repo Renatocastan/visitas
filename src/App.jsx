@@ -2,11 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.4.1-fotos-para-anuncio";
+const APP_VERSION = "Castan Realtime v3.4.0-visitown";
 
 const VISITOWN_ID = "__visitown__";
-const TIPO_VISITA = "visita";
-const TIPO_FOTO_ANUNCIO = "foto_anuncio";
 const VISITOWN_LABEL = "Visitown";
 const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
 
@@ -313,7 +311,6 @@ function emptyVisit(user, preUsers, mostradores){
     longitude:null,
     geolocalizacao_data:null,
     atualizar_fotos:false,
-    tipo_agendamento:TIPO_VISITA,
     checklist_ok:false,
     motivo_cancelamento:"",
     motivo_cancelamento_outros:"",
@@ -706,10 +703,7 @@ export default function App(){
   },[updateAvailable,modalVisit,modalUser]);
 
   function getUser(id){return usuarios.find(u=>u.id===id)}
-  const isFotoAnuncio = v => v?.tipo_agendamento===TIPO_FOTO_ANUNCIO;
-const tipoAgendamentoLabel = v => isFotoAnuncio(v) ? "Fotos para anúncio" : "Visita";
-
-function isVisitown(v){
+  function isVisitown(v){
     return isVisitownRegistro(v);
   }
   function mostradorLabel(v){
@@ -1069,27 +1063,10 @@ function isVisitown(v){
     const numeroRevisitaFinal=revisitaFinal ? Math.max(2, Number(f.numero_revisita||0), anterioresRevisita.length+1) : null;
 
     const isReservaAgenda = f.status==="reserva" || f.status==="reserva_cancelada";
-    const isFotoAnuncioAgendamento = f.tipo_agendamento===TIPO_FOTO_ANUNCIO;
 
     if(isReservaAgenda){
       if(!user?.id || !f.mostrador_id || !f.data_visita || !f.horario_visita || !f.horario_fim_visita || !f.status){
         return alert("Para Reserva de agenda, preencha somente mostrador, data, hora e status.");
-      }
-    }else if(isFotoAnuncioAgendamento){
-      if(
-        !f.codigo_imovel ||
-        !f.endereco_imovel ||
-        !f.proprietario_nome ||
-        !f.proprietario_contato ||
-        !String(f.local_chave||"").trim() ||
-        !user?.id ||
-        !f.mostrador_id ||
-        !f.data_visita ||
-        !f.horario_visita ||
-        !f.horario_fim_visita ||
-        !f.status
-      ){
-        return alert("Para Fotos para anúncio, preencha imóvel, proprietário, local da chave, mostrador, data e horários.");
       }
     }else if(
       !f.codigo_imovel ||
@@ -1229,8 +1206,8 @@ function isVisitown(v){
       endereco_imovel:isReservaAgenda?(f.endereco_imovel||"Reserva de agenda"):f.endereco_imovel,
       proprietario_nome:isReservaAgenda?(f.proprietario_nome||"Reserva"):f.proprietario_nome,
       proprietario_contato:isReservaAgenda?(f.proprietario_contato||"Reserva"):f.proprietario_contato,
-      cliente_nome:isReservaAgenda?(f.cliente_nome||"Reserva de agenda"):(isFotoAnuncioAgendamento?"Fotos para anúncio":f.cliente_nome),
-      cliente_contato:isReservaAgenda?(f.cliente_contato||"Reserva"):(isFotoAnuncioAgendamento?"N/A":f.cliente_contato),
+      cliente_nome:isReservaAgenda?(f.cliente_nome||"Reserva de agenda"):f.cliente_nome,
+      cliente_contato:isReservaAgenda?(f.cliente_contato||"Reserva"):f.cliente_contato,
       local_chave:isReservaAgenda?(f.local_chave||"Reserva de agenda"):(f.local_chave||null),
       pre_atendimento_id:f.id?(old?.pre_atendimento_id||f.pre_atendimento_id):(user?.id||f.pre_atendimento_id),
       mostrador_id:f.mostrador_id===VISITOWN_ID?null:f.mostrador_id,
@@ -1247,9 +1224,8 @@ function isVisitown(v){
       latitude:f.latitude||null,
       longitude:f.longitude||null,
       geolocalizacao_data:f.geolocalizacao_data||null,
-      atualizar_fotos:isFotoAnuncioAgendamento?false:Boolean(f.atualizar_fotos),
-      tipo_agendamento:isFotoAnuncioAgendamento?TIPO_FOTO_ANUNCIO:TIPO_VISITA,
-      checklist_ok:isFotoAnuncioAgendamento?false:Boolean(f.checklist_ok),
+      atualizar_fotos:Boolean(f.atualizar_fotos),
+      checklist_ok:Boolean(f.checklist_ok),
       motivo_cancelamento:f.status==="cancelada"?(f.motivo_cancelamento||null):null,
       motivo_cancelamento_outros:f.status==="cancelada"&&f.motivo_cancelamento==="outros"?(f.motivo_cancelamento_outros||null):null,
       revisita:revisitaFinal,
@@ -1280,25 +1256,12 @@ function isVisitown(v){
           `${payload.codigo_imovel} - ${payload.cliente_nome}: ${statusLabel(payload.status)}.`
         );
 
-        if(!isFotoAnuncio(payload) && ["concluida","avancou_fechamento"].includes(payload.status)){
+        if(["concluida","avancou_fechamento"].includes(payload.status)){
           await notifyMany(
             fechamentoUsers.map(u=>u.id),
             "Visita pronta para fechamento",
             `${payload.codigo_imovel} - ${payload.cliente_nome} foi atualizada para ${statusLabel(payload.status)}.`
           );
-        }
-
-        if(isFotoAnuncio(payload) && payload.status==="concluida"){
-          await supabase.from("acoes_visita").insert({
-            created_at:nowISO(),
-            horario_brasil:horarioBrasil(),
-            visita_id:f.id,
-            usuario_id:user?.id,
-            tipo_acao:"foto_anuncio_concluida",
-            status_anterior:old?.status||null,
-            status_novo:payload.status,
-            observacao:"Agendamento de fotos para anúncio concluído e encerrado sem envio para fechamento."
-          });
         }
 
         if(payload.status==="pos_ok"){
@@ -1398,23 +1361,9 @@ function isVisitown(v){
 
       await notifyMany(
         [payload.mostrador_id,payload.pre_atendimento_id],
-        isFotoAnuncio(payload)?"📸 Fotos para anúncio agendadas":"Nova visita agendada",
-        isFotoAnuncio(payload)
-          ? `${payload.codigo_imovel} - fotos para anúncio em ${payload.data_visita} às ${String(payload.horario_visita).slice(0,5)}.`
-          : `${payload.codigo_imovel} - ${payload.cliente_nome} em ${payload.data_visita} às ${String(payload.horario_visita).slice(0,5)}.`
+        "Nova visita agendada",
+        `${payload.codigo_imovel} - ${payload.cliente_nome} em ${payload.data_visita} às ${String(payload.horario_visita).slice(0,5)}.`
       );
-
-      if(isFotoAnuncio(payload)){
-        await supabase.from("acoes_visita").insert({
-          created_at:nowISO(),
-          horario_brasil:horarioBrasil(),
-          visita_id:data.id,
-          usuario_id:user?.id,
-          tipo_acao:"agendamento_foto_anuncio",
-          status_novo:payload.status,
-          observacao:"Agendamento criado pelo fluxo Fotos para anúncio."
-        });
-      }
 
       if(payload.atualizar_fotos){
         await supabase.from("acoes_visita").insert({
@@ -1700,28 +1649,7 @@ async function deleteVisit(id){
 
   const reportVisits=visitas.filter(v=>v.data_visita>=reportStart && v.data_visita<=reportEnd);
 
-  const fotosAnuncioRel=reportVisits.filter(v=>isFotoAnuncio(v));
-  const visitasComerciaisRel=reportVisits.filter(v=>
-    !isFotoAnuncio(v) &&
-    !['reserva','reserva_cancelada','cancelada'].includes(v.status)
-  );
-
-  const fotosAnuncioAgendadasRel=fotosAnuncioRel.filter(v=>['agendada','confirmada'].includes(v.status)).length;
-  const fotosAnuncioConcluidasRel=fotosAnuncioRel.filter(v=>v.status==='concluida').length;
-  const fotosAnuncioCanceladasRel=fotosAnuncioRel.filter(v=>v.status==='cancelada').length;
-  const fotosAnuncioRemarcadasRel=fotosAnuncioRel.filter(v=>v.status==='remarcada').length;
-  const fotosAnuncioPorMostrador=Object.values(
-    fotosAnuncioRel.reduce((acc,v)=>{
-      const nome = isVisitown(v)
-        ? VISITOWN_LABEL
-        : (getUser(v.mostrador_id)?.nome||'Sem mostrador');
-      if(!acc[nome])acc[nome]={nome,total:0,concluidas:0,canceladas:0};
-      acc[nome].total+=1;
-      if(v.status==='concluida')acc[nome].concluidas+=1;
-      if(v.status==='cancelada')acc[nome].canceladas+=1;
-      return acc;
-    },{})
-  ).sort((a,b)=>b.total-a.total || a.nome.localeCompare(b.nome));
+  const visitasComerciaisRel=reportVisits.filter(v=>!['reserva','reserva_cancelada','cancelada'].includes(v.status));
 
   const visitasPorImovelRows=Object.values(
     visitasComerciaisRel.reduce((acc,v)=>{
@@ -1768,8 +1696,8 @@ async function deleteVisit(id){
     };
   }).sort((a,b)=>b.total_historico-a.total_historico || a.cliente.localeCompare(b.cliente));
 
-  const statusCount = id => reportVisits.filter(v=>!isFotoAnuncio(v)&&v.status===id).length;
-  const totalRelatorio = reportVisits.filter(v=>!isFotoAnuncio(v)).length;
+  const statusCount = id => reportVisits.filter(v=>v.status===id).length;
+  const totalRelatorio = reportVisits.length;
   const agendadasRel = statusCount("agendada");
   const confirmadasRel = statusCount("confirmada");
   const concluidasRel = statusCount("concluida");
@@ -2011,7 +1939,7 @@ const visitasCanceladasBase=visitas
   const minhaAgendaVisits=visitas
     .filter(v=>{
       if(isFechamento){
-        return !isFotoAnuncio(v) && v.status==="concluida";
+        return v.status==="concluida";
       }
 
       if(isContratos){
@@ -2029,7 +1957,7 @@ const visitasCanceladasBase=visitas
     .sort((a,b)=>(a.data_visita+String(a.horario_visita)).localeCompare(b.data_visita+String(b.horario_visita)));
 
   const visitasFechamentoConsulta=visitas
-    .filter(v=>!isFotoAnuncio(v) && v.status==="avancou_fechamento" && Boolean(v.checklist_ok))
+    .filter(v=>v.status==="avancou_fechamento" && Boolean(v.checklist_ok))
     .sort((a,b)=>(String(b.data_visita||"")+String(b.horario_visita||"")).localeCompare(String(a.data_visita||"")+String(a.horario_visita||"")));
 
   
@@ -2055,31 +1983,6 @@ const visitasCanceladasBase=visitas
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }
-
-  function exportFotosParaAnuncio(){
-    const rows=[
-      ["Fotos para anúncio"],
-      ["Período",reportStart,reportEnd],
-      [],
-      ["Código do imóvel","Endereço","Data","Horário","Mostrador","Status","Pré-atendimento","Observação"]
-    ];
-
-    fotosAnuncioRel
-      .slice()
-      .sort((a,b)=>(String(a.data_visita||"")+String(a.horario_visita||"")).localeCompare(String(b.data_visita||"")+String(b.horario_visita||"")))
-      .forEach(v=>rows.push([
-        v.codigo_imovel||"",
-        v.endereco_imovel||"",
-        v.data_visita||"",
-        String(v.horario_visita||"").slice(0,5),
-        isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||""),
-        statusLabel(v.status),
-        getUser(v.pre_atendimento_id)?.nome||"",
-        v.observacao||""
-      ]));
-
-    exportCsv(`castan-fotos-anuncio-${reportStart}-a-${reportEnd}.csv`,rows);
   }
 
 function exportReport(){
@@ -2131,25 +2034,6 @@ function exportReport(){
 
     setModalVisit({
       ...emptyVisit(user,preUsers,mostradores),
-      data_visita:day||todayISO(),
-      horario_visita:horaInicial,
-      horario_fim_visita:horaFinal
-    });
-  }
-
-  function startFotoAnuncio(day=null, horario=null){
-    if(!canCreateVisit)return alert("Seu perfil não pode criar agendamentos.");
-
-    const horaInicial = horario ? String(horario).slice(0,5) : "09:00";
-    const idx = HORARIOS_VISITA.indexOf(horaInicial);
-    const horaFinal = idx >= 0 && idx < HORARIOS_VISITA.length-1 ? HORARIOS_VISITA[idx+3] || HORARIOS_VISITA[idx+1] : "10:00";
-
-    setModalVisit({
-      ...emptyVisit(user,preUsers,mostradores),
-      tipo_agendamento:TIPO_FOTO_ANUNCIO,
-      cliente_nome:"Fotos para anúncio",
-      cliente_contato:"N/A",
-      atualizar_fotos:false,
       data_visita:day||todayISO(),
       horario_visita:horaInicial,
       horario_fim_visita:horaFinal
@@ -2248,7 +2132,6 @@ function exportReport(){
         <button className="btn ghost" onClick={garantirNotificacoes}>Ativar notificações</button>
         {user&&<button className="notif notif-button" onClick={()=>setShowNotifications(v=>!v)}><Bell size={16}/> {unread}</button>}
         {canCreateVisit&&<button className="btn primary" onClick={()=>startNewVisit()}><Plus size={16}/> Nova Visita</button>}
-        {canCreateVisit&&<button className="btn foto-anuncio-btn" onClick={()=>startFotoAnuncio()}>📸 Fotos para anúncio</button>}
         {user&&<button className="btn ghost" onClick={doLogout}>Sair</button>}
       </div>
     </header>
@@ -2301,7 +2184,6 @@ function exportReport(){
             <div className="mobile-drawer-actions">
               <button className="btn ghost" onClick={()=>{setMobileMenuOpen(false);loadAll();}}>Atualizar</button>
               <button className="btn ghost" onClick={()=>{setMobileMenuOpen(false);garantirNotificacoes();}}>Ativar notificações</button>
-              {canCreateVisit&&<button className="btn foto-anuncio-btn" onClick={()=>{setMobileMenuOpen(false);startFotoAnuncio();}}>📸 Fotos para anúncio</button>}
               <button className="btn danger" onClick={()=>{setMobileMenuOpen(false);doLogout();}}>Sair</button>
             </div>
           </aside>
@@ -2656,25 +2538,6 @@ function exportReport(){
                 <ReportTable rows={reportByPre}/>
                 <h3>Por mostrador</h3>
                 <ReportTable rows={reportByMostrador}/>
-              </section>
-
-              <section className="report-section fotos-anuncio-report">
-                <div className="report-section-head">
-                  <div>
-                    <h2>📸 Fotos para anúncio</h2>
-                    <p className="hint">Indicadores exclusivos dos agendamentos criados pelo botão Fotos para anúncio. Estes registros não entram no fluxo comercial de fechamento.</p>
-                  </div>
-                  <button className="btn foto-anuncio-btn" onClick={exportFotosParaAnuncio}>Exportar fotos para anúncio</button>
-                </div>
-                <div className="report-kpis">
-                  <Metric title="Total de agendamentos" value={fotosAnuncioRel.length}/>
-                  <Metric title="Agendadas" value={fotosAnuncioAgendadasRel}/>
-                  <Metric title="Concluídas" value={fotosAnuncioConcluidasRel}/>
-                  <Metric title="Canceladas" value={fotosAnuncioCanceladasRel}/>
-                  <Metric title="Remarcadas" value={fotosAnuncioRemarcadasRel}/>
-                </div>
-                <h3>Por mostrador</h3>
-                <SimpleBars rows={fotosAnuncioPorMostrador.map(r=>({id:r.nome,label:r.nome,total:r.total}))}/>
               </section>
 
               <section className="report-section report-export-card">
@@ -3065,10 +2928,10 @@ function Filters({preUsers,mostradores,filterPre,setFilterPre,filterMostrador,se
 }
 
 function VisitCard({v,getUser,colorForUser,onClick}){
-  return <div className={`visitcard ${isFotoAnuncio(v)?"foto-anuncio-card":""} ${v.status==="cancelada"?"calendar-cancelada":""}`} style={{borderLeftColor:v.status==="cancelada"?"#B91C1C":colorForUser(v)}} onClick={onClick}>
+  return <div className={`visitcard ${v.status==="cancelada"?"calendar-cancelada":""}`} style={{borderLeftColor:v.status==="cancelada"?"#B91C1C":colorForUser(v)}} onClick={onClick}>
     {v.revisita&&<div className="revisita-badge">↩ REVISITA{v.numero_revisita?` #${v.numero_revisita}`:""}</div>}
     <div>
-      <strong>{isFotoAnuncio(v)?"📸 FOTOS • ":""}{v.data_visita?`${v.data_visita.split("-").reverse().join("/")} • `:""}{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel} — {v.cliente_nome}</strong>
+      <strong>{v.data_visita?`${v.data_visita.split("-").reverse().join("/")} • `:""}{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel} — {v.cliente_nome}</strong>
       <p>Endereço: {v.endereco_imovel||"-"}</p>
       <p>Pré: {getUser(v.pre_atendimento_id)?.nome||"-"} | Mostrador: {(isVisitownRegistro(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-"))}</p>
       <p>Cliente: {v.cliente_contato||"-"} | PP: {v.proprietario_nome||"-"}</p>
@@ -3195,7 +3058,7 @@ function Calendar({year,month,visitas,bloqueios=[],colorForUser,getUser,onNew,on
 
                     const v=ev.item;
                     return <div key={ev.id} className={`month-list-event ${v.status==="cancelada"?"calendar-cancelada":""} ${v.atualizar_fotos?"foto-destaque":""}`} style={{borderLeftColor:colorForUser(v)}} onMouseEnter={e=>setTip(e,visitTooltip(v,getUser))} onMouseMove={e=>setTip(e,visitTooltip(v,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>{e.stopPropagation();onEdit(v)}}>
-                      <strong>{v.status==="cancelada"?"⚠️ ":""}{isFotoAnuncio(v)?"📸 ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
+                      <strong>{v.status==="cancelada"?"⚠️ ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
                       <span>{v.status==="reserva"?(getUser?.(v.mostrador_id)?.nome||"Reserva"):(v.cliente_nome||"")}</span>
                     </div>;
                   })}
@@ -3301,7 +3164,7 @@ function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onN
 
                 const v=ev.item;
                 return <div key={ev.id} className={`week-list-event ${v.status==="cancelada"?"calendar-cancelada":""} ${v.atualizar_fotos?"foto-destaque-card":""}`} style={{borderLeftColor:colorForUser(v)}} onMouseEnter={e=>setTip(e,visitTooltip(v,getUser))} onMouseMove={e=>setTip(e,visitTooltip(v,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>{e.stopPropagation();onEdit(v)}}>
-                  <strong>{v.status==="cancelada"?"⚠️ ":""}{isFotoAnuncio(v)?"📸 ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
+                  <strong>{v.status==="cancelada"?"⚠️ ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
                   <span>{v.status==="reserva"?(getUser?.(v.mostrador_id)?.nome||"Reserva"):v.cliente_nome}</span>
                 </div>;
               })}
@@ -3502,9 +3365,6 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
   const visitFotos=(fotos||[]).filter(x=>x.visita_id===f.id);
 
   const statusOptions = STATUS.filter(([id])=>{
-    if(f.tipo_agendamento===TIPO_FOTO_ANUNCIO){
-      return ["agendada","confirmada","concluida","cancelada","remarcada"].includes(id);
-    }
     if(isFechamento) return ["pos_ok","avancou_fechamento","cancelada"].includes(id);
     if(isContratos) return ["cancelada","contrato"].includes(id);
     if(id==="avancou_fechamento") return canStatusAvancouFechamento;
@@ -3516,20 +3376,11 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
   return <div className="overlay">
     <div className="modal">
       <div className="modalhead">
-        <h2>{f.tipo_agendamento===TIPO_FOTO_ANUNCIO
-          ? (readOnly?"Visualizar fotos para anúncio":(editing?"Editar fotos para anúncio":"Fotos para anúncio"))
-          : (readOnly?"Visualizar visita":(editing?"Editar visita":"Nova visita"))
-        }</h2>
+        <h2>{readOnly?"Visualizar visita":(editing?"Editar visita":"Nova visita")}</h2>
         <button onClick={onClose}><X/></button>
       </div>
 
       <div className="form">
-        {f.tipo_agendamento===TIPO_FOTO_ANUNCIO&&
-          <div className="foto-anuncio-banner">
-            📸 <strong>Fotos para anúncio</strong>
-            <span>Este agendamento é operacional e não seguirá para o time de fechamento.</span>
-          </div>
-        }
         <Field
           label="Código do imóvel *"
           value={f.codigo_imovel}
@@ -3540,16 +3391,14 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
         <Field label="Endereço do imóvel *" value={f.endereco_imovel} disabled={limited} onChange={v=>setF({...f,endereco_imovel:v})}/>
         <Field label="Nome do proprietário *" value={f.proprietario_nome} disabled={limited} onChange={v=>setF({...f,proprietario_nome:v})}/>
         <Field label="Contato do proprietário *" value={f.proprietario_contato} disabled={limited} onChange={v=>setF({...f,proprietario_contato:v})}/>
-        {f.tipo_agendamento!==TIPO_FOTO_ANUNCIO&&<>
-          <Field label="Nome do cliente *" value={f.cliente_nome} disabled={limited} onChange={v=>setF({...f,cliente_nome:v})}/>
-          <Field
-            label="Contato do cliente *"
-            value={f.cliente_contato}
-            disabled={limited}
-            onChange={v=>setF({...f,cliente_contato:v,revisita_alertado_chave:""})}
-            onBlur={valorAtual=>onCheckRevisit?.({...f,cliente_contato:valorAtual,revisita_alertado_chave:""})}
-          />
-        </>}
+        <Field label="Nome do cliente *" value={f.cliente_nome} disabled={limited} onChange={v=>setF({...f,cliente_nome:v})}/>
+        <Field
+          label="Contato do cliente *"
+          value={f.cliente_contato}
+          disabled={limited}
+          onChange={v=>setF({...f,cliente_contato:v,revisita_alertado_chave:""})}
+          onBlur={valorAtual=>onCheckRevisit?.({...f,cliente_contato:valorAtual,revisita_alertado_chave:""})}
+        />
         <label className="check revisita-check">
           <input
             type="checkbox"
