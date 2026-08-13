@@ -69813,3 +69813,33 @@
     width:100%;
   }
 }
+
+
+/* v3.4.0 — Visitown como mostrador externo */
+.visitown-info{
+  grid-column:1/-1;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  border:1px solid #c7d2fe;
+  background:#eef2ff;
+  color:#3730a3;
+  border-radius:12px;
+  padding:12px 14px;
+  margin-top:-4px;
+}
+
+.visitown-info strong{
+  font-weight:900;
+}
+
+.visitown-info span{
+  font-size:13px;
+  font-weight:700;
+  line-height:1.45;
+}
+
+.visitown-pendente{
+  background:rgba(185,28,28,.28)!important;
+  border-color:rgba(254,202,202,.75)!important;
+}

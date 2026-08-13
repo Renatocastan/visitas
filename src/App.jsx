@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.3.4-relatorio-imovel-exportavel";
+const APP_VERSION = "Castan Realtime v3.4.0-visitown";
+
+const VISITOWN_ID = "__visitown__";
+const VISITOWN_LABEL = "Visitown";
+const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
 const USER_COLOR_MAP = {
@@ -294,6 +298,7 @@ function emptyVisit(user, preUsers, mostradores){
     local_chave:"",
     pre_atendimento_id:user?.id||"",
     mostrador_id:mostradores[0]?.id||"",
+    mostrador_externo:"",
     data_visita:todayISO(),
     horario_visita:"09:00",
     horario_fim_visita:"10:00",
@@ -414,6 +419,7 @@ export default function App(){
 
   const preUsers=usuarios.filter(u=>u.tipo==="pre_atendimento"&&u.ativo!==false);
   const mostradores=usuarios.filter(u=>u.tipo==="mostrador"&&u.ativo!==false);
+  const mostradoresComVisitown=[...mostradores,{id:VISITOWN_ID,nome:VISITOWN_LABEL,externo:true}];
   const captadores=usuarios.filter(u=>u.tipo==="captador"&&u.ativo!==false);
   const fechamentoUsers=usuarios.filter(u=>u.tipo==="fechamento"&&u.ativo!==false);
   const contratosUsers=usuarios.filter(u=>u.tipo==="contratos"&&u.ativo!==false);
@@ -562,6 +568,53 @@ export default function App(){
   },[user?.id,isMostrador,visitas]);
 
   useEffect(()=>{
+    if(!user?.id)return;
+
+    const checarVisitown=async()=>{
+      const agora=new Date();
+      const pendentes=visitas.filter(v=>
+        isVisitown(v) &&
+        v.pre_atendimento_id &&
+        !v.visitown_alerta_enviado &&
+        ["agendada","confirmada"].includes(v.status) &&
+        visitaDateTime(v) &&
+        visitaDateTime(v)<agora
+      );
+
+      for(const v of pendentes){
+        const {data,error}=await supabase
+          .from("visitas")
+          .update({visitown_alerta_enviado:true})
+          .eq("id",v.id)
+          .eq("visitown_alerta_enviado",false)
+          .select("id");
+
+        if(error || !(data||[]).length)continue;
+
+        const msg=`${v.codigo_imovel} - a visita da Visitown das ${String(v.horario_visita||"").slice(0,5)} já passou. Atualize para Concluída, Cancelada ou Remarcada.`;
+
+        await notifyMany(
+          [v.pre_atendimento_id],
+          "⚠️ Ação necessária — Visitown",
+          msg
+        );
+
+        if(v.pre_atendimento_id===user.id){
+          setToast([{id:`visitown-${v.id}`,titulo:"⚠️ Ação necessária — Visitown",mensagem:msg}]);
+          notificarDispositivo("Castan Visitas — Visitown",msg,`visitown-${v.id}`);
+          setTimeout(()=>setToast([]),10000);
+        }
+      }
+
+      if(pendentes.length)loadAll();
+    };
+
+    checarVisitown();
+    const interval=setInterval(checarVisitown,60000);
+    return()=>clearInterval(interval);
+  },[user?.id,visitas]);
+
+  useEffect(()=>{
     const scheduleRefresh=()=>{
       if(realtimeRefreshTimerRef.current)clearTimeout(realtimeRefreshTimerRef.current);
       realtimeRefreshTimerRef.current=setTimeout(()=>{
@@ -650,6 +703,18 @@ export default function App(){
   },[updateAvailable,modalVisit,modalUser]);
 
   function getUser(id){return usuarios.find(u=>u.id===id)}
+  function isVisitown(v){
+    return isVisitownRegistro(v);
+  }
+  function mostradorLabel(v){
+    if(isVisitown(v))return VISITOWN_LABEL;
+    return getUser(v?.mostrador_id)?.nome||"-";
+  }
+  function matchMostradorFiltro(v,filtro){
+    if(filtro==="all")return true;
+    if(filtro===VISITOWN_ID)return isVisitown(v);
+    return v?.mostrador_id===filtro;
+  }
   function colorForUser(id){
     const u=usuarios.find(x=>x.id===id);
     const nome=String(u?.nome||"").trim().toLowerCase();
@@ -719,7 +784,7 @@ export default function App(){
   }
 
   function getEnvolvidosVisita(v){
-    return [v?.pre_atendimento_id, v?.mostrador_id].filter(Boolean);
+    return [v?.pre_atendimento_id, isVisitown(v)?null:v?.mostrador_id].filter(Boolean);
   }
 
   async function garantirNotificacoes(){
@@ -928,7 +993,7 @@ export default function App(){
       `Última visita: ${dataUltima} às ${String(ultima.horario_visita||'').slice(0,5)}`,
       `Cliente: ${ultima.cliente_nome||candidate.cliente_nome||'-'}`,
       `Imóvel: ${ultima.codigo_imovel||candidate.codigo_imovel||'-'}`,
-      `Mostrador: ${getUser(ultima.mostrador_id)?.nome||'-'}`,
+      `Mostrador: ${isVisitown(ultima)?VISITOWN_LABEL:(getUser(ultima.mostrador_id)?.nome||'-')}`,
       `Status: ${statusLabel(ultima.status)}`,
       '',
       `Esta será a visita nº ${anteriores.length+1} deste cliente neste imóvel.`,
@@ -977,7 +1042,7 @@ export default function App(){
         `Última visita: ${dataUltima} às ${String(ultima.horario_visita||'').slice(0,5)}`,
         `Cliente: ${ultima.cliente_nome||f.cliente_nome||'-'}`,
         `Imóvel: ${ultima.codigo_imovel||f.codigo_imovel||'-'}`,
-        `Mostrador: ${getUser(ultima.mostrador_id)?.nome||'-'}`,
+        `Mostrador: ${isVisitown(ultima)?VISITOWN_LABEL:(getUser(ultima.mostrador_id)?.nome||'-')}`,
         '',
         `Esta será a visita nº ${anterioresAntesSalvar.length+1}.`,
         '',
@@ -1081,7 +1146,7 @@ export default function App(){
       return alert('Descreva o motivo em "outros".');
     }
 
-    const bloqueioAgenda = agendaBloqueadaPara(f.mostrador_id,f.data_visita,f.horario_visita,f.horario_fim_visita);
+    const bloqueioAgenda = f.mostrador_id===VISITOWN_ID ? null : agendaBloqueadaPara(f.mostrador_id,f.data_visita,f.horario_visita,f.horario_fim_visita);
     if(bloqueioAgenda){
       return alert("AGENDA BLOQUEADA, INCLUIR OUTRO MOSTRADOR");
     }
@@ -1092,6 +1157,7 @@ export default function App(){
     const conflitoAgenda = visitas.find(v =>
       v.id !== f.id &&
       !["cancelada","reserva_cancelada"].includes(v.status) &&
+      f.mostrador_id!==VISITOWN_ID &&
       v.mostrador_id === f.mostrador_id &&
       v.data_visita === f.data_visita &&
       horariosSobrepostos(f.horario_visita,f.horario_fim_visita,v.horario_visita,v.horario_fim_visita||v.horario_visita)
@@ -1125,6 +1191,16 @@ export default function App(){
       return alert("Para marcar Check List, o fechamento precisa informar o valor da proposta.");
     }
 
+    const visitownHorarioAlterado=Boolean(
+      old &&
+      f.mostrador_id===VISITOWN_ID &&
+      (
+        old.data_visita!==f.data_visita ||
+        String(old.horario_visita||"").slice(0,5)!==String(f.horario_visita||"").slice(0,5) ||
+        !isVisitown(old)
+      )
+    );
+
     const payload={
       codigo_imovel:isReservaAgenda?(f.codigo_imovel||"RESERVA"):f.codigo_imovel,
       endereco_imovel:isReservaAgenda?(f.endereco_imovel||"Reserva de agenda"):f.endereco_imovel,
@@ -1134,7 +1210,9 @@ export default function App(){
       cliente_contato:isReservaAgenda?(f.cliente_contato||"Reserva"):f.cliente_contato,
       local_chave:isReservaAgenda?(f.local_chave||"Reserva de agenda"):(f.local_chave||null),
       pre_atendimento_id:f.id?(old?.pre_atendimento_id||f.pre_atendimento_id):(user?.id||f.pre_atendimento_id),
-      mostrador_id:f.mostrador_id,
+      mostrador_id:f.mostrador_id===VISITOWN_ID?null:f.mostrador_id,
+      mostrador_externo:f.mostrador_id===VISITOWN_ID?VISITOWN_LABEL:null,
+      visitown_alerta_enviado:f.mostrador_id===VISITOWN_ID?(visitownHorarioAlterado?false:Boolean(old?.visitown_alerta_enviado)):false,
       data_visita:f.data_visita,
       horario_visita:f.horario_visita,
       horario_fim_visita:f.horario_fim_visita||null,
@@ -1521,7 +1599,7 @@ async function deleteVisit(id){
       if(!canSeeAllVisits && !(v.created_by===user?.id || v.pre_atendimento_id===user?.id || v.mostrador_id===user?.id)) return false;
       if(isContratos && !isContratoVisibleVisit(v)) return false;
       const byPre=filterPre==="all"||v.pre_atendimento_id===filterPre;
-      const byMostrador=filterMostrador==="all"||v.mostrador_id===filterMostrador;
+      const byMostrador=matchMostradorFiltro(v,filterMostrador);
       const byStatus=filterStatus==="all"||v.status===filterStatus;
       const haystack=[
         v.codigo_imovel,
@@ -1762,7 +1840,10 @@ async function deleteVisit(id){
   };
 
   const reportByPre=preUsers.map(p=>({nome:p.nome,...buildReport(reportVisits.filter(v=>v.pre_atendimento_id===p.id))}));
-  const reportByMostrador=mostradores.map(m=>({nome:m.nome,...buildReport(reportVisits.filter(v=>v.mostrador_id===m.id))}));
+  const reportByMostrador=[
+    ...mostradores.map(m=>({nome:m.nome,...buildReport(reportVisits.filter(v=>v.mostrador_id===m.id))})),
+    {nome:VISITOWN_LABEL,...buildReport(reportVisits.filter(v=>isVisitown(v)))}
+  ];
 
   const fechamentoReportRows=fechamentoUsers.map(u=>{
     const arr=reportVisits.filter(v=>v.updated_by===u.id || v.pre_atendimento_id===u.id || v.created_by===u.id);
@@ -1775,7 +1856,7 @@ async function deleteVisit(id){
   const dashboardVisits=visitas.filter(v=>{
     const byDate = v.data_visita>=dashboardStart && v.data_visita<=dashboardEnd;
     const byPre = dashboardPre==="all" || v.pre_atendimento_id===dashboardPre;
-    const byMostrador = dashboardMostrador==="all" || v.mostrador_id===dashboardMostrador;
+    const byMostrador = matchMostradorFiltro(v,dashboardMostrador);
     const byCaptador = dashboardCaptador==="all" || v.created_by===dashboardCaptador;
     const byStatus = dashboardStatus==="all" || v.status===dashboardStatus;
     return byDate && byPre && byMostrador && byCaptador && byStatus;
@@ -1792,10 +1873,16 @@ async function deleteVisit(id){
     total:dashboardVisits.filter(v=>v.pre_atendimento_id===p.id).length
   })).sort((a,b)=>b.total-a.total);
 
-  const rankingMostradores=mostradores.map(m=>({
-    nome:m.nome,
-    total:dashboardVisits.filter(v=>v.mostrador_id===m.id).length
-  })).sort((a,b)=>b.total-a.total);
+  const rankingMostradores=[
+    ...mostradores.map(m=>({
+      nome:m.nome,
+      total:dashboardVisits.filter(v=>v.mostrador_id===m.id).length
+    })),
+    {
+      nome:VISITOWN_LABEL,
+      total:dashboardVisits.filter(v=>isVisitown(v)).length
+    }
+  ].sort((a,b)=>b.total-a.total);
 
   const rankingCaptadores=captadores.map(c=>({
     nome:c.nome,
@@ -1841,7 +1928,7 @@ const visitasCanceladasBase=visitas
 
     const bySearch=!q || texto.includes(q);
     const byPre=canceladasPre==="all" || v.pre_atendimento_id===canceladasPre;
-    const byMostrador=canceladasMostrador==="all" || v.mostrador_id===canceladasMostrador;
+    const byMostrador=matchMostradorFiltro(v,canceladasMostrador);
     const byMotivo=canceladasMotivo==="all" || v.motivo_cancelamento===canceladasMotivo;
     const byStart=!canceladasStart || v.data_visita>=canceladasStart;
     const byEnd=!canceladasEnd || v.data_visita<=canceladasEnd;
@@ -1955,7 +2042,7 @@ function exportReport(){
 
   function openVisit(v){
     const somenteLeitura = v.status==="cancelada" || !canEditVisit(v);
-    setModalVisit({...v,valor_proposta:v.valor_proposta||"",somenteLeitura});
+    setModalVisit({...v,mostrador_id:isVisitown(v)?VISITOWN_ID:v.mostrador_id,valor_proposta:v.valor_proposta||"",somenteLeitura});
   }
 
   const unread=notificacoes.filter(n=>n.usuario_id===user?.id&&!n.lida).length;
@@ -1966,6 +2053,13 @@ function exportReport(){
   const minhasAtualizacoesFotos=visitas
     .filter(v=>v.pre_atendimento_id===user?.id || v.mostrador_id===user?.id)
     .filter(v=>v.atualizar_fotos&&!["cancelada","reserva_cancelada"].includes(v.status)).length;
+  const minhasPendenciasVisitown=visitas.filter(v=>
+    isVisitown(v) &&
+    v.pre_atendimento_id===user?.id &&
+    ["agendada","confirmada"].includes(v.status) &&
+    visitaDateTime(v) &&
+    visitaDateTime(v)<new Date()
+  ).length;
 
   const navItems=[
     ["inicio",Home,"Inicial"],
@@ -2124,6 +2218,10 @@ function exportReport(){
                 <strong>{unread}</strong>
                 <small>notificações</small>
               </div>
+              {minhasPendenciasVisitown>0&&<div className="welcome-stats visitown-pendente">
+                <strong>{minhasPendenciasVisitown}</strong>
+                <small>pendência Visitown</small>
+              </div>}
             </section>
 
             <section className="metrics">
@@ -2150,7 +2248,7 @@ function exportReport(){
               dashboardStatus={dashboardStatus}
               setDashboardStatus={setDashboardStatus}
               preUsers={preUsers}
-              mostradores={mostradores}
+              mostradores={mostradoresComVisitown}
               captadores={captadores}
             />
 
@@ -2190,7 +2288,7 @@ function exportReport(){
           </>}
 
           {view==="calendario"&&<>
-            <Filters preUsers={preUsers} mostradores={mostradores} filterPre={filterPre} setFilterPre={setFilterPre} filterMostrador={filterMostrador} setFilterMostrador={setFilterMostrador} filterStatus={filterStatus} setFilterStatus={setFilterStatus} searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
+            <Filters preUsers={preUsers} mostradores={mostradoresComVisitown} filterPre={filterPre} setFilterPre={setFilterPre} filterMostrador={filterMostrador} setFilterMostrador={setFilterMostrador} filterStatus={filterStatus} setFilterStatus={setFilterStatus} searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
             <Card>
               <div className="monthbar">
                 <button onClick={()=>{
@@ -2327,7 +2425,7 @@ function exportReport(){
 
                 <select value={canceladasMostrador} onChange={e=>setCanceladasMostrador(e.target.value)}>
                   <option value="all">Todos mostradores</option>
-                  {mostradores.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+                  {mostradoresComVisitown.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
                 </select>
 
                 <select value={canceladasMotivo} onChange={e=>setCanceladasMotivo(e.target.value)}>
@@ -2376,7 +2474,7 @@ function exportReport(){
           }
 
           {view==="lista"&&<>
-            <Filters preUsers={preUsers} mostradores={mostradores} filterPre={filterPre} setFilterPre={setFilterPre} filterMostrador={filterMostrador} setFilterMostrador={setFilterMostrador} filterStatus={filterStatus} setFilterStatus={setFilterStatus} searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
+            <Filters preUsers={preUsers} mostradores={mostradoresComVisitown} filterPre={filterPre} setFilterPre={setFilterPre} filterMostrador={filterMostrador} setFilterMostrador={setFilterMostrador} filterStatus={filterStatus} setFilterStatus={setFilterStatus} searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
             <Card title="Lista de visitas">
               {visibleVisits.map(v=><VisitCard key={v.id} v={v} getUser={getUser} colorForUser={colorForVisit} onClick={()=>openVisit(v)}/>)}
             </Card>
@@ -2580,7 +2678,7 @@ function exportReport(){
         canStatusPosOk={canStatusPosOk}
         canStatusContrato={canStatusContrato}
         preUsers={preUsers}
-        mostradores={mostradores}
+        mostradores={mostradoresComVisitown}
         editing={!!modalVisit.id}
         acoes={acoes}
         fotos={fotos}
@@ -2752,7 +2850,7 @@ function CentralOperacional({visitasHoje,ativas,concluidas,canceladas,reservas,f
             <strong>{String(proxima.horario_visita||"").slice(0,5)}</strong>
             <span>{proxima.status==="reserva"?"RESERVA":proxima.codigo_imovel}</span>
             <small>Cliente: {proxima.cliente_nome||"-"}</small>
-            <small>Mostrador: {getUser(proxima.mostrador_id)?.nome||"-"}</small>
+            <small>Mostrador: {(isVisitownRegistro(proxima)?VISITOWN_LABEL:(getUser(proxima.mostrador_id)?.nome||"-"))}</small>
             <small>Pré: {getUser(proxima.pre_atendimento_id)?.nome||"-"}</small>
           </button>
           : <Empty text="Nenhuma próxima visita para hoje."/>
@@ -2764,7 +2862,7 @@ function CentralOperacional({visitasHoje,ativas,concluidas,canceladas,reservas,f
         {emAndamento.length?emAndamento.map(v=>
           <button className="central-list-item active" key={v.id} onClick={()=>onOpenVisit(v)}>
             <strong>{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel||"Reserva"}</strong>
-            <span>{getUser(v.mostrador_id)?.nome||"-"} — {v.cliente_nome||"-"}</span>
+            <span>{(isVisitownRegistro(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-"))} — {v.cliente_nome||"-"}</span>
           </button>
         ):<Empty text="Nenhuma visita em andamento."/>}
       </div>
@@ -2774,7 +2872,7 @@ function CentralOperacional({visitasHoje,ativas,concluidas,canceladas,reservas,f
         {proximas.length?proximas.map(v=>
           <button className="central-list-item" key={v.id} onClick={()=>onOpenVisit(v)}>
             <strong>{String(v.horario_visita||"").slice(0,5)} • {v.status==="reserva"?"RESERVA":v.codigo_imovel}</strong>
-            <span>{getUser(v.mostrador_id)?.nome||"-"} — {v.cliente_nome||"-"}</span>
+            <span>{(isVisitownRegistro(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-"))} — {v.cliente_nome||"-"}</span>
           </button>
         ):<Empty text="Sem próximas visitas."/>}
       </div>
@@ -2785,7 +2883,7 @@ function CentralOperacional({visitasHoje,ativas,concluidas,canceladas,reservas,f
           <button className="central-list-item cancelado" key={v.id} onClick={()=>onOpenVisit(v)}>
             <strong>{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel||"Reserva"}</strong>
             <span>{v.motivo_cancelamento||"Cancelada"}{String(v.motivo_cancelamento||"").toLowerCase()==="outros"&&v.motivo_cancelamento_outros?` — ${v.motivo_cancelamento_outros}`:""}</span>
-            <small>{getUser(v.mostrador_id)?.nome||"-"} — {v.cliente_nome||"-"}</small>
+            <small>{(isVisitownRegistro(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-"))} — {v.cliente_nome||"-"}</small>
           </button>
         ):<Empty text="Nenhum cancelamento hoje."/>}
       </div>
@@ -2835,7 +2933,7 @@ function VisitCard({v,getUser,colorForUser,onClick}){
     <div>
       <strong>{v.data_visita?`${v.data_visita.split("-").reverse().join("/")} • `:""}{String(v.horario_visita||"").slice(0,5)} • {v.codigo_imovel} — {v.cliente_nome}</strong>
       <p>Endereço: {v.endereco_imovel||"-"}</p>
-      <p>Pré: {getUser(v.pre_atendimento_id)?.nome||"-"} | Mostrador: {getUser(v.mostrador_id)?.nome||"-"}</p>
+      <p>Pré: {getUser(v.pre_atendimento_id)?.nome||"-"} | Mostrador: {(isVisitownRegistro(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-"))}</p>
       <p>Cliente: {v.cliente_contato||"-"} | PP: {v.proprietario_nome||"-"}</p>
       {v.status==="cancelada"&&v.motivo_cancelamento&&<p>Motivo: {v.motivo_cancelamento}{v.motivo_cancelamento==="outros"&&v.motivo_cancelamento_outros?` — ${v.motivo_cancelamento_outros}`:""}</p>}
       {v.observacao&&<p>Obs.: {v.observacao}</p>}
@@ -2877,7 +2975,7 @@ function visitTooltip(v,getUser){
     `Cliente: ${v.cliente_nome||"-"}`,
     `Endereço: ${v.endereco_imovel||"-"}`,
     `Pré: ${getUser?.(v.pre_atendimento_id)?.nome||"-"}`,
-    `Mostrador: ${getUser?.(v.mostrador_id)?.nome||"-"}`,
+    `Mostrador: ${isVisitownRegistro(v)?VISITOWN_LABEL:(getUser?.(v.mostrador_id)?.nome||"-")}`,
     `Status: ${statusLabel(v.status)}`,
     v.atualizar_fotos ? "ATUALIZAR FOTOS" : ""
   ].filter(Boolean).join("\n");
@@ -3315,6 +3413,10 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
         <Field label="Local da chave *" value={f.local_chave||""} disabled={limited} onChange={v=>setF({...f,local_chave:v})}/>
         
         <Select label="Mostrador *" value={f.mostrador_id} disabled={limited} onChange={v=>setF({...f,mostrador_id:v})} options={mostradores.map(u=>[u.id,u.nome])}/>
+        {f.mostrador_id===VISITOWN_ID&&<div className="visitown-info">
+          <strong>Mostrador externo: Visitown</strong>
+          <span>Após o horário da visita, o pré-atendimento responsável deverá registrar o resultado. Ao marcar como Concluída, a visita seguirá normalmente para o Fechamento.</span>
+        </div>}
         <Field label="Data *" type="date" value={f.data_visita} disabled={limited} onChange={v=>setF({...f,data_visita:v})}/>
         <Select label="Horário inicial *" value={String(f.horario_visita||"").slice(0,5)} disabled={limited} onChange={v=>setF({...f,horario_visita:v})} options={HORARIOS_VISITA.map(h=>[h,h])}/>
         <Select label="Horário final *" value={String(f.horario_fim_visita||"").slice(0,5)} disabled={limited} onChange={v=>setF({...f,horario_fim_visita:v})} options={HORARIOS_VISITA.map(h=>[h,h])}/>
