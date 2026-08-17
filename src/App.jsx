@@ -1,14 +1,55 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
-import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck } from "lucide-react";
+import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.4.3-hotfix-pagina-branca";
+const APP_VERSION = "Castan Realtime v3.5.0-ficha-proprietario";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
 const TIPO_FOTO_ANUNCIO = "foto_anuncio";
 const isFotoAnuncio = v => v?.tipo_agendamento===TIPO_FOTO_ANUNCIO;
 const VISITOWN_LABEL = "Visitown";
+const FICHA_BUCKET = "fichas-proprietarios";
+const FICHA_DOC_CATEGORIAS = [
+  ["rg_cpf","RG e CPF do proprietário"],
+  ["conta_luz","Conta de luz"],
+  ["conta_agua","Conta de água"],
+  ["conta_gas","Conta de gás"],
+  ["condominio","Último boleto do condomínio"],
+  ["iptu","IPTU"]
+];
+
+function emptyOwnerForm(){
+  return {
+    nome:"", rg:"", cpf:"", estado_civil:"", profissao:"", nacionalidade:"",
+    email:"", fone:"", endereco_residencial:"", bairro_residencial:"",
+    cep_residencial:"", cidade_residencial:"",
+    conta_nome_titular:"", conta_cpf_titular:"", banco:"", agencia:"",
+    conta_numero:"", conta_tipo:"", conta_conjunta:"", conta_conjunta_nome:"",
+    imovel_endereco:"", imovel_bairro:"", imovel_cidade:"", imovel_cep:"",
+    vagas:"", disponivel_venda:"", prazo_locacao:"", valor_aluguel:"",
+    valor_condominio:"", condominio_em_dia:"",
+    iptu_valor:"", iptu_contribuinte:"", iptu_vaga:"",
+    iptu_dividido:"", iptu_proporcao:"",
+    sabesp_rgi:"", sabesp_conta_aberta:"", sabesp_cobranca_individual:"",
+    enel_instalacao:"", enel_cpf:"", enel_conta_aberta:"", enel_cobranca_individual:"",
+    comgas_codigo:"", comgas_cpf:"", comgas_conta_aberta:"",
+    responsavel_pagamentos:"",
+    pintura_nova:"", pintura_data:"", pintura_cor:""
+  };
+}
+
+function fichaLink(token){
+  const base=window.location.origin+window.location.pathname;
+  return `${base}?ficha=${encodeURIComponent(token)}`;
+}
+
+function novoTokenFicha(){
+  if(window.crypto?.randomUUID){
+    return `${window.crypto.randomUUID().replace(/-/g,"")}${Date.now().toString(36)}`;
+  }
+  return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
 const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
@@ -325,11 +366,14 @@ function emptyVisit(user, preUsers, mostradores){
 }
 
 export default function App(){
+  const fichaPublicaToken = new URLSearchParams(window.location.search).get("ficha");
   const [usuarios,setUsuarios]=useState([]);
   const [visitas,setVisitas]=useState([]);
   const [notificacoes,setNotificacoes]=useState([]);
   const [acoes,setAcoes]=useState([]);
   const [fotos,setFotos]=useState([]);
+  const [fichasProprietario,setFichasProprietario]=useState([]);
+  const [fichaProprietarioDocs,setFichaProprietarioDocs]=useState([]);
 
   const [currentUserId,setCurrentUserId]=useState(localStorage.getItem("castan_logged_user")||"");
   const [loginUserId,setLoginUserId]=useState("");
@@ -453,13 +497,15 @@ export default function App(){
 
   const loadAll=useCallback(async()=>{
     try{
-      const [u,v,n,a,ft,bq]=await Promise.all([
+      const [u,v,n,a,ft,bq,fp,fpd]=await Promise.all([
         supabase.from("usuarios").select("*").order("created_at",{ascending:true}),
         loadAllVisitas(),
         supabase.from("notificacoes").select("*").order("created_at",{ascending:false}).limit(300),
         supabase.from("acoes_visita").select("*").order("created_at",{ascending:false}).limit(800),
         supabase.from("fotos_visita").select("*").order("created_at",{ascending:false}).limit(800),
-        supabase.from("agenda_bloqueios").select("*").order("data_bloqueio",{ascending:true}).order("horario_inicio",{ascending:true})
+        supabase.from("agenda_bloqueios").select("*").order("data_bloqueio",{ascending:true}).order("horario_inicio",{ascending:true}),
+        supabase.from("fichas_proprietario").select("*").order("created_at",{ascending:false}).limit(500),
+        supabase.from("ficha_proprietario_documentos").select("*").order("created_at",{ascending:false}).limit(1500)
       ]);
 
       if(!u.error)setUsuarios(u.data||[]);
@@ -467,6 +513,8 @@ export default function App(){
       if(!a.error)setAcoes(a.data||[]);
       if(!ft.error)setFotos(ft.data||[]);
       if(!bq.error)setAgendaBloqueios(bq.data||[]);
+      if(!fp.error)setFichasProprietario(fp.data||[]);
+      if(!fpd.error)setFichaProprietarioDocs(fpd.data||[]);
 
       if(!n.error){
         const newNotifications=n.data||[];
@@ -499,7 +547,7 @@ export default function App(){
     }
   },[currentUserId,loadAllVisitas]);
 
-  useEffect(()=>{loadAll()},[loadAll]);
+  useEffect(()=>{if(!fichaPublicaToken)loadAll()},[loadAll,fichaPublicaToken]);
 
   useEffect(()=>{
     if(currentUserId)localStorage.setItem("castan_logged_user",currentUserId);
@@ -634,6 +682,8 @@ export default function App(){
       .on("postgres_changes",{event:"*",schema:"public",table:"acoes_visita"},scheduleRefresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"fotos_visita"},scheduleRefresh)
       .on("postgres_changes",{event:"*",schema:"public",table:"agenda_bloqueios"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"fichas_proprietario"},scheduleRefresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"ficha_proprietario_documentos"},scheduleRefresh)
       .subscribe();
 
     const visibility=()=>{if(!document.hidden)loadAll()};
@@ -2120,6 +2170,59 @@ function exportReport(){
     exportCsv(`castan-relatorio-${reportStart}-a-${reportEnd}.csv`,rows);
   }
 
+  const canManageOwnerForms = Boolean(user&&(isAdmin||isGestor||isFechamento||isContratos));
+
+  async function gerarLinkFichaProprietario(){
+    if(!canManageOwnerForms)return alert("Seu perfil não pode gerar fichas de proprietário.");
+
+    const codigo=window.prompt("Informe o código do imóvel:");
+    if(!codigo || !String(codigo).trim())return;
+
+    const nome=window.prompt("Informe o nome do proprietário (opcional):")||"";
+    const token=novoTokenFicha();
+
+    const {data,error}=await supabase
+      .from("fichas_proprietario")
+      .insert({
+        token,
+        codigo_imovel:String(codigo).trim(),
+        nome_proprietario:String(nome).trim()||null,
+        status:"pendente",
+        dados:emptyOwnerForm(),
+        created_by:user?.id||null
+      })
+      .select("*")
+      .single();
+
+    if(error)return alert(error.message);
+
+    const link=fichaLink(token);
+    try{await navigator.clipboard.writeText(link);}catch{}
+    await loadAll();
+
+    window.prompt("Link criado e copiado. Envie este endereço ao proprietário:",link);
+    return data;
+  }
+
+  async function copiarLinkFicha(token){
+    const link=fichaLink(token);
+    try{
+      await navigator.clipboard.writeText(link);
+      alert("Link copiado.");
+    }catch{
+      window.prompt("Copie o link:",link);
+    }
+  }
+
+  async function baixarDocumentoFicha(doc){
+    const {data,error}=await supabase.storage
+      .from(FICHA_BUCKET)
+      .createSignedUrl(doc.storage_path,120);
+
+    if(error)return alert(error.message);
+    if(data?.signedUrl)window.open(data.signedUrl,"_blank","noopener,noreferrer");
+  }
+
   function startNewVisit(day=null, horario=null){
     if(!canCreateVisit)return alert("Seu perfil não pode criar visitas.");
 
@@ -2185,6 +2288,7 @@ function exportReport(){
     ["lista",ListChecks,"Lista"],
     ["central",BarChart3,"Central"],
     ["relatorios",BarChart3,"Relatórios"],
+    ...(canManageOwnerForms?[["fichas_proprietario",FileText,"Fichas proprietários"]]:[]),
     ["equipe",Users,"Equipe"]
   ];
 
@@ -2219,6 +2323,10 @@ function exportReport(){
     setYear(hoje.getFullYear());
     setCurrentDay(todayISO());
     setCalendarMode("day");
+  }
+
+  if(fichaPublicaToken){
+    return <PublicOwnerForm token={fichaPublicaToken}/>;
   }
 
   if(loading)return <div className="loading">Carregando Castan Visitas...</div>;
@@ -2722,6 +2830,16 @@ function exportReport(){
                 <ActionTable acoes={acoes} visitas={visitas} getUser={getUser} reportStart={reportStart} reportEnd={reportEnd}/>
               </section>
             </Card>
+          }
+
+          {view==="fichas_proprietario"&&canManageOwnerForms&&
+            <FichasProprietarioPanel
+              fichas={fichasProprietario}
+              documentos={fichaProprietarioDocs}
+              onGerar={gerarLinkFichaProprietario}
+              onCopiar={copiarLinkFicha}
+              onDownload={baixarDocumentoFicha}
+            />
           }
 
           {view==="equipe"&&
@@ -3719,6 +3837,410 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
       </div>
     </div>
   </div>;
+}
+
+
+function ChoiceField({label,value,onChange,options,required=false}){
+  return <fieldset className="owner-choice">
+    <legend>{label}{required?" *":""}</legend>
+    <div className="owner-choice-options">
+      {options.map(([id,text])=>
+        <label key={id} className={value===id?"selected":""}>
+          <input
+            type="radio"
+            name={`${label}-${id}`}
+            checked={value===id}
+            onChange={()=>onChange(id)}
+          />
+          <span>{text}</span>
+        </label>
+      )}
+    </div>
+  </fieldset>;
+}
+
+function OwnerTextField({label,value,onChange,type="text",required=false,placeholder=""}){
+  return <label className="owner-field">
+    <span>{label}{required?" *":""}</span>
+    <input
+      type={type}
+      value={value||""}
+      placeholder={placeholder}
+      onChange={e=>onChange(e.target.value)}
+    />
+  </label>;
+}
+
+function OwnerSection({title,children}){
+  return <section className="owner-section">
+    <h2>{title}</h2>
+    <div className="owner-grid">{children}</div>
+  </section>;
+}
+
+function PublicOwnerForm({token}){
+  const [ficha,setFicha]=useState(null);
+  const [form,setForm]=useState(emptyOwnerForm());
+  const [docs,setDocs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [uploading,setUploading]=useState("");
+  const [message,setMessage]=useState("");
+
+  const setField=(key,value)=>setForm(prev=>({...prev,[key]:value}));
+
+  const carregar=useCallback(async()=>{
+    setLoading(true);
+    const {data,error}=await supabase
+      .from("fichas_proprietario")
+      .select("*")
+      .eq("token",token)
+      .maybeSingle();
+
+    if(error || !data){
+      setFicha(null);
+      setLoading(false);
+      return;
+    }
+
+    setFicha(data);
+    setForm({...emptyOwnerForm(),...(data.dados||{})});
+
+    const {data:docsData}=await supabase
+      .from("ficha_proprietario_documentos")
+      .select("*")
+      .eq("ficha_id",data.id)
+      .order("created_at",{ascending:false});
+
+    setDocs(docsData||[]);
+    setLoading(false);
+  },[token]);
+
+  useEffect(()=>{carregar()},[carregar]);
+
+  async function uploadDocumento(categoria,files){
+    if(!ficha || !files?.length)return;
+    setUploading(categoria);
+    setMessage("");
+
+    for(const file of Array.from(files)){
+      if(file.size>12*1024*1024){
+        setMessage(`O arquivo ${file.name} ultrapassa 12 MB.`);
+        continue;
+      }
+
+      const safeName=String(file.name||"documento")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"")
+        .replace(/[^a-zA-Z0-9._-]/g,"_");
+      const path=`${token}/${categoria}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safeName}`;
+
+      const {error:uploadError}=await supabase.storage
+        .from(FICHA_BUCKET)
+        .upload(path,file,{contentType:file.type||"application/octet-stream",upsert:false});
+
+      if(uploadError){
+        setMessage(`Erro ao enviar ${file.name}: ${uploadError.message}`);
+        continue;
+      }
+
+      const {error:metaError}=await supabase
+        .from("ficha_proprietario_documentos")
+        .insert({
+          ficha_id:ficha.id,
+          token,
+          categoria,
+          nome_arquivo:file.name,
+          storage_path:path,
+          tipo_arquivo:file.type||null,
+          tamanho_bytes:file.size
+        });
+
+      if(metaError)setMessage(`Arquivo enviado, mas houve erro ao registrar: ${metaError.message}`);
+    }
+
+    setUploading("");
+    await carregar();
+  }
+
+  async function abrirDocumento(doc){
+    const {data,error}=await supabase.storage.from(FICHA_BUCKET).createSignedUrl(doc.storage_path,120);
+    if(error)return setMessage(error.message);
+    if(data?.signedUrl)window.open(data.signedUrl,"_blank","noopener,noreferrer");
+  }
+
+  async function salvar(e){
+    e.preventDefault();
+    if(!ficha)return;
+
+    const obrigatorios=[
+      ["nome","Nome"],
+      ["cpf","CPF"],
+      ["fone","Fone"],
+      ["imovel_endereco","Endereço do imóvel"],
+      ["disponivel_venda","Disponibilidade para venda"],
+      ["prazo_locacao","Prazo de locação"],
+      ["responsavel_pagamentos","Responsável pelos pagamentos"]
+    ];
+
+    const faltando=obrigatorios.filter(([key])=>!String(form[key]||"").trim()).map(([,label])=>label);
+    if(faltando.length){
+      setMessage(`Preencha os campos obrigatórios: ${faltando.join(", ")}.`);
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    const {error}=await supabase
+      .from("fichas_proprietario")
+      .update({
+        nome_proprietario:form.nome||ficha.nome_proprietario||null,
+        dados:form,
+        status:"preenchida",
+        submitted_at:new Date().toISOString(),
+        updated_at:new Date().toISOString()
+      })
+      .eq("id",ficha.id)
+      .eq("token",token);
+
+    setSaving(false);
+
+    if(error){
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Ficha enviada com sucesso para a Castan Imóveis.");
+    await carregar();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+
+  if(loading)return <div className="public-owner-shell"><div className="loading">Carregando ficha...</div></div>;
+
+  if(!ficha){
+    return <div className="public-owner-shell">
+      <div className="public-owner-card owner-not-found">
+        <h1>Castan Imóveis</h1>
+        <h2>Ficha não encontrada</h2>
+        <p>Este link é inválido ou não está mais disponível.</p>
+      </div>
+    </div>;
+  }
+
+  return <div className="public-owner-shell">
+    <header className="public-owner-header">
+      <img src="/logo-castan-agenda.jpeg" alt="Castan Imóveis" onError={e=>{e.currentTarget.style.display="none"}}/>
+      <div>
+        <h1>Ficha Cadastral do Proprietário</h1>
+        <p>Imóvel: <strong>{ficha.codigo_imovel||"-"}</strong></p>
+      </div>
+      <span className={`owner-status ${ficha.status==="preenchida"?"done":"pending"}`}>
+        {ficha.status==="preenchida"?"Preenchida":"Pendente"}
+      </span>
+    </header>
+
+    <form className="public-owner-card" onSubmit={salvar}>
+      {message&&<div className={`owner-message ${message.includes("sucesso")?"success":""}`}>{message}</div>}
+
+      <OwnerSection title="Dados do proprietário">
+        <OwnerTextField label="Nome" value={form.nome} onChange={v=>setField("nome",v)} required/>
+        <OwnerTextField label="RG" value={form.rg} onChange={v=>setField("rg",v)}/>
+        <OwnerTextField label="CPF" value={form.cpf} onChange={v=>setField("cpf",v)} required/>
+        <OwnerTextField label="Estado civil" value={form.estado_civil} onChange={v=>setField("estado_civil",v)}/>
+        <OwnerTextField label="Profissão" value={form.profissao} onChange={v=>setField("profissao",v)}/>
+        <OwnerTextField label="Nacionalidade" value={form.nacionalidade} onChange={v=>setField("nacionalidade",v)}/>
+        <OwnerTextField label="E-mail" type="email" value={form.email} onChange={v=>setField("email",v)}/>
+        <OwnerTextField label="Fone" value={form.fone} onChange={v=>setField("fone",v)} required/>
+        <OwnerTextField label="Endereço residencial" value={form.endereco_residencial} onChange={v=>setField("endereco_residencial",v)}/>
+        <OwnerTextField label="Bairro" value={form.bairro_residencial} onChange={v=>setField("bairro_residencial",v)}/>
+        <OwnerTextField label="CEP" value={form.cep_residencial} onChange={v=>setField("cep_residencial",v)}/>
+        <OwnerTextField label="Cidade" value={form.cidade_residencial} onChange={v=>setField("cidade_residencial",v)}/>
+      </OwnerSection>
+
+      <OwnerSection title="Dados da conta">
+        <OwnerTextField label="Nome do titular" value={form.conta_nome_titular} onChange={v=>setField("conta_nome_titular",v)}/>
+        <OwnerTextField label="CPF do titular" value={form.conta_cpf_titular} onChange={v=>setField("conta_cpf_titular",v)}/>
+        <OwnerTextField label="Banco" value={form.banco} onChange={v=>setField("banco",v)}/>
+        <OwnerTextField label="Agência" value={form.agencia} onChange={v=>setField("agencia",v)}/>
+        <OwnerTextField label="Conta nº" value={form.conta_numero} onChange={v=>setField("conta_numero",v)}/>
+        <ChoiceField label="Tipo da conta" value={form.conta_tipo} onChange={v=>setField("conta_tipo",v)} options={[["corrente","Corrente"],["poupanca","Poupança"]]}/>
+        <ChoiceField label="A conta é conjunta?" value={form.conta_conjunta} onChange={v=>setField("conta_conjunta",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        {form.conta_conjunta==="sim"&&
+          <OwnerTextField label="Nome do segundo titular da conta conjunta" value={form.conta_conjunta_nome} onChange={v=>setField("conta_conjunta_nome",v)}/>
+        }
+      </OwnerSection>
+
+      <OwnerSection title="Dados do imóvel alugado">
+        <OwnerTextField label="Endereço" value={form.imovel_endereco} onChange={v=>setField("imovel_endereco",v)} required/>
+        <OwnerTextField label="Bairro" value={form.imovel_bairro} onChange={v=>setField("imovel_bairro",v)}/>
+        <OwnerTextField label="Cidade" value={form.imovel_cidade} onChange={v=>setField("imovel_cidade",v)}/>
+        <OwnerTextField label="CEP" value={form.imovel_cep} onChange={v=>setField("imovel_cep",v)}/>
+        <OwnerTextField label="Vagas" value={form.vagas} onChange={v=>setField("vagas",v)}/>
+        <ChoiceField label="Seu imóvel está disponível para venda?" value={form.disponivel_venda} onChange={v=>setField("disponivel_venda",v)} options={[["sim","Sim"],["nao","Não"]]} required/>
+        <ChoiceField label="Prazo de locação" value={form.prazo_locacao} onChange={v=>setField("prazo_locacao",v)} options={[["30_residencial","30 meses residencial"],["24_comercial","24 meses comercial"]]} required/>
+        <OwnerTextField label="Valor do aluguel negociado" value={form.valor_aluguel} onChange={v=>setField("valor_aluguel",v)} placeholder="R$"/>
+      </OwnerSection>
+
+      <OwnerSection title="Condomínio e IPTU">
+        <OwnerTextField label="Valor do condomínio ordinário" value={form.valor_condominio} onChange={v=>setField("valor_condominio",v)} placeholder="R$"/>
+        <ChoiceField label="Condomínio está em dia?" value={form.condominio_em_dia} onChange={v=>setField("condominio_em_dia",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        <OwnerTextField label="Valor IPTU" value={form.iptu_valor} onChange={v=>setField("iptu_valor",v)} placeholder="R$"/>
+        <OwnerTextField label="Nº do contribuinte IPTU" value={form.iptu_contribuinte} onChange={v=>setField("iptu_contribuinte",v)}/>
+        <OwnerTextField label="IPTU da vaga, se houver" value={form.iptu_vaga} onChange={v=>setField("iptu_vaga",v)}/>
+        <ChoiceField label="O IPTU é dividido?" value={form.iptu_dividido} onChange={v=>setField("iptu_dividido",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        {form.iptu_dividido==="sim"&&
+          <OwnerTextField label="Proporção da cobrança (%)" value={form.iptu_proporcao} onChange={v=>setField("iptu_proporcao",v)}/>
+        }
+        <div className="owner-info full">
+          Informe o número do contribuinte mesmo quando o imóvel for isento. Informe também o IPTU da vaga, se houver.
+        </div>
+      </OwnerSection>
+
+      <OwnerSection title="Sabesp">
+        <OwnerTextField label="Nº do RGI" value={form.sabesp_rgi} onChange={v=>setField("sabesp_rgi",v)}/>
+        <ChoiceField label="Tem conta em aberto?" value={form.sabesp_conta_aberta} onChange={v=>setField("sabesp_conta_aberta",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        <ChoiceField label="Cobrança individual?" value={form.sabesp_cobranca_individual} onChange={v=>setField("sabesp_cobranca_individual",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+      </OwnerSection>
+
+      <OwnerSection title="Enel">
+        <OwnerTextField label="Nº instalação" value={form.enel_instalacao} onChange={v=>setField("enel_instalacao",v)}/>
+        <OwnerTextField label="CPF cadastrado" value={form.enel_cpf} onChange={v=>setField("enel_cpf",v)}/>
+        <ChoiceField label="Tem conta em aberto?" value={form.enel_conta_aberta} onChange={v=>setField("enel_conta_aberta",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        <ChoiceField label="Cobrança individual?" value={form.enel_cobranca_individual} onChange={v=>setField("enel_cobranca_individual",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+      </OwnerSection>
+
+      <OwnerSection title="Comgás">
+        <OwnerTextField label="Código do usuário nº" value={form.comgas_codigo} onChange={v=>setField("comgas_codigo",v)}/>
+        <OwnerTextField label="CPF cadastrado" value={form.comgas_cpf} onChange={v=>setField("comgas_cpf",v)}/>
+        <ChoiceField label="Tem conta em aberto?" value={form.comgas_conta_aberta} onChange={v=>setField("comgas_conta_aberta",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+      </OwnerSection>
+
+      <OwnerSection title="Responsável pelos pagamentos do condomínio e IPTU">
+        <ChoiceField label="Responsável" value={form.responsavel_pagamentos} onChange={v=>setField("responsavel_pagamentos",v)} options={[["castan","Castan"],["proprietario","Proprietário"]]} required/>
+        <div className="owner-info full">
+          <strong>Castan:</strong> a Castan fica responsável por efetuar os pagamentos e a taxa de administração é cobrada sobre aluguel e encargos.<br/>
+          <strong>Proprietário:</strong> a Castan repassa os encargos ao proprietário e a taxa de administração é cobrada somente sobre o aluguel.
+        </div>
+      </OwnerSection>
+
+      <OwnerSection title="Pintura do imóvel">
+        <ChoiceField label="A pintura é nova (menos de 3 meses)?" value={form.pintura_nova} onChange={v=>setField("pintura_nova",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        {form.pintura_nova==="sim"&&<>
+          <OwnerTextField label="Data da pintura" type="date" value={form.pintura_data} onChange={v=>setField("pintura_data",v)}/>
+          <OwnerTextField label="Cor da tinta" value={form.pintura_cor} onChange={v=>setField("pintura_cor",v)}/>
+        </>}
+      </OwnerSection>
+
+      <section className="owner-section">
+        <h2>Documentos necessários</h2>
+        <p className="owner-section-subtitle">Envie PDF, JPG ou PNG. É possível anexar mais de um arquivo em cada item.</p>
+        <div className="owner-doc-grid">
+          {FICHA_DOC_CATEGORIAS.map(([id,label])=>{
+            const enviados=docs.filter(d=>d.categoria===id);
+            return <div className="owner-doc-card" key={id}>
+              <strong>{label}</strong>
+              <label className="btn ghost owner-upload-btn">
+                <Upload size={16}/> {uploading===id?"Enviando...":"Anexar arquivo"}
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,image/jpeg,image/png"
+                  disabled={Boolean(uploading)}
+                  onChange={e=>uploadDocumento(id,e.target.files)}
+                />
+              </label>
+              {enviados.length?enviados.map(doc=>
+                <button type="button" key={doc.id} className="owner-file-link" onClick={()=>abrirDocumento(doc)}>
+                  <Download size={14}/> {doc.nome_arquivo}
+                </button>
+              ):<small>Nenhum arquivo enviado.</small>}
+            </div>;
+          })}
+        </div>
+      </section>
+
+      <div className="owner-submit">
+        <button className="btn primary" type="submit" disabled={saving}>
+          <Save size={17}/> {saving?"Enviando...":(ficha.status==="preenchida"?"Atualizar ficha":"Enviar ficha")}
+        </button>
+        <p>Ao enviar, os dados ficam disponíveis para a equipe da Castan Imóveis.</p>
+      </div>
+    </form>
+
+    <footer className="public-owner-footer">
+      R. da Mooca, 2879 – Mooca – CEP: 03165-001 – São Paulo – Fone: 2694-0655
+    </footer>
+  </div>;
+}
+
+function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload}){
+  return <Card title="Fichas de Proprietários">
+    <div className="owner-admin-toolbar">
+      <div>
+        <p className="hint">Gere um link individual e envie ao proprietário para preenchimento e envio dos documentos.</p>
+      </div>
+      <button className="btn primary" onClick={onGerar}><Plus size={16}/> Gerar link da ficha</button>
+    </div>
+
+    <div className="owner-admin-summary">
+      <span><b>{fichas.length}</b> fichas</span>
+      <span><b>{fichas.filter(f=>f.status==="pendente").length}</b> pendentes</span>
+      <span><b>{fichas.filter(f=>f.status==="preenchida").length}</b> preenchidas</span>
+    </div>
+
+    <div className="owner-admin-list">
+      {fichas.map(f=>{
+        const docs=documentos.filter(d=>d.ficha_id===f.id);
+        return <details className="owner-admin-item" key={f.id}>
+          <summary>
+            <div>
+              <strong>{f.codigo_imovel||"Sem código"} — {f.nome_proprietario||f.dados?.nome||"Proprietário não informado"}</strong>
+              <span>Criada em {f.created_at?new Date(f.created_at).toLocaleDateString("pt-BR"):"-"}</span>
+            </div>
+            <span className={`owner-status ${f.status==="preenchida"?"done":"pending"}`}>
+              {f.status==="preenchida"?"Preenchida":"Pendente"}
+            </span>
+          </summary>
+
+          <div className="owner-admin-actions">
+            <button className="btn ghost" onClick={()=>onCopiar(f.token)}><Copy size={15}/> Copiar link</button>
+            <a className="btn ghost" href={fichaLink(f.token)} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Abrir ficha</a>
+          </div>
+
+          {f.status==="preenchida"&&<div className="owner-admin-data">
+            <h3>Resumo preenchido</h3>
+            <div className="owner-summary-grid">
+              <span><b>Nome:</b> {f.dados?.nome||"-"}</span>
+              <span><b>CPF:</b> {f.dados?.cpf||"-"}</span>
+              <span><b>Telefone:</b> {f.dados?.fone||"-"}</span>
+              <span><b>Imóvel:</b> {f.dados?.imovel_endereco||"-"}</span>
+              <span><b>Venda:</b> {f.dados?.disponivel_venda||"-"}</span>
+              <span><b>Pagamentos:</b> {f.dados?.responsavel_pagamentos||"-"}</span>
+            </div>
+          </div>}
+
+          <div className="owner-admin-docs">
+            <h3>Documentos ({docs.length})</h3>
+            {FICHA_DOC_CATEGORIAS.map(([cat,label])=>{
+              const catDocs=docs.filter(d=>d.categoria===cat);
+              if(!catDocs.length)return null;
+              return <div className="owner-admin-doc-group" key={cat}>
+                <strong>{label}</strong>
+                {catDocs.map(doc=>
+                  <button className="owner-file-link" key={doc.id} onClick={()=>onDownload(doc)}>
+                    <Download size={14}/> {doc.nome_arquivo}
+                  </button>
+                )}
+              </div>;
+            })}
+            {!docs.length&&<p className="hint">Nenhum documento enviado.</p>}
+          </div>
+        </details>;
+      })}
+      {!fichas.length&&<Empty text="Nenhuma ficha de proprietário criada."/>}
+    </div>
+  </Card>;
 }
 
 function UserModal({u,setU,onClose,onSave,isAdmin,currentUser}){

@@ -69905,3 +69905,387 @@
 .foto-anuncio-banner{
   margin-bottom:4px;
 }
+
+
+/* v3.5.0 — Ficha cadastral do proprietário */
+.public-owner-shell{
+  min-height:100vh;
+  background:#f3f6fa;
+  padding:24px 16px 40px;
+  color:#0f2942;
+}
+
+.public-owner-header,
+.public-owner-card,
+.public-owner-footer{
+  max-width:1100px;
+  margin:0 auto;
+}
+
+.public-owner-header{
+  display:flex;
+  align-items:center;
+  gap:18px;
+  background:#123B63;
+  color:#fff;
+  border-radius:20px 20px 0 0;
+  padding:20px 24px;
+}
+
+.public-owner-header img{
+  width:92px;
+  max-height:72px;
+  object-fit:contain;
+  background:#fff;
+  border-radius:12px;
+  padding:5px;
+}
+
+.public-owner-header > div{
+  flex:1;
+}
+
+.public-owner-header h1{
+  margin:0;
+  font-size:28px;
+}
+
+.public-owner-header p{
+  margin:5px 0 0;
+}
+
+.public-owner-card{
+  background:#fff;
+  border-radius:0 0 20px 20px;
+  padding:22px;
+  box-shadow:0 16px 38px rgba(15,41,66,.12);
+}
+
+.owner-section{
+  border:1px solid #dbe4ee;
+  border-radius:16px;
+  padding:18px;
+  margin-bottom:18px;
+  background:#fff;
+}
+
+.owner-section h2{
+  margin:0 0 16px;
+  color:#123B63;
+  font-size:20px;
+  padding-bottom:10px;
+  border-bottom:2px solid #edf2f7;
+}
+
+.owner-section-subtitle{
+  color:#64748b;
+  margin-top:-8px;
+}
+
+.owner-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+
+.owner-field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.owner-field span,
+.owner-choice legend{
+  font-weight:800;
+  color:#334155;
+}
+
+.owner-field input{
+  width:100%;
+  min-height:46px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  padding:9px 11px;
+  font-size:15px;
+  background:#fff;
+}
+
+.owner-choice{
+  border:0;
+  margin:0;
+  padding:0;
+}
+
+.owner-choice-options{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:7px;
+}
+
+.owner-choice-options label{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  padding:9px 13px;
+  background:#fff;
+  cursor:pointer;
+}
+
+.owner-choice-options label.selected{
+  border-color:#123B63;
+  background:#eaf2f9;
+  color:#123B63;
+  font-weight:900;
+}
+
+.owner-choice-options input{
+  accent-color:#B91C1C;
+}
+
+.owner-info{
+  background:#fff7ed;
+  border-left:5px solid #ea580c;
+  border-radius:10px;
+  padding:12px 14px;
+  color:#7c2d12;
+  line-height:1.45;
+}
+
+.owner-grid .full{
+  grid-column:1/-1;
+}
+
+.owner-doc-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+
+.owner-doc-card{
+  border:1px solid #dbe4ee;
+  border-radius:12px;
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+
+.owner-upload-btn{
+  width:max-content;
+  cursor:pointer;
+}
+
+.owner-upload-btn input{
+  display:none;
+}
+
+.owner-file-link{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  border:0;
+  background:#edf4fb;
+  color:#123B63;
+  border-radius:8px;
+  padding:7px 9px;
+  cursor:pointer;
+  text-align:left;
+  font-weight:700;
+}
+
+.owner-message{
+  background:#fff1f2;
+  color:#9f1239;
+  border:1px solid #fecdd3;
+  border-radius:11px;
+  padding:12px 14px;
+  margin-bottom:16px;
+  font-weight:800;
+}
+
+.owner-message.success{
+  background:#f0fdf4;
+  color:#166534;
+  border-color:#bbf7d0;
+}
+
+.owner-submit{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+
+.owner-submit p{
+  color:#64748b;
+  margin:0;
+}
+
+.public-owner-footer{
+  text-align:center;
+  padding:18px;
+  color:#64748b;
+  font-size:13px;
+}
+
+.owner-status{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  padding:6px 11px;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+.owner-status.pending{
+  background:#fef3c7;
+  color:#92400e;
+}
+
+.owner-status.done{
+  background:#dcfce7;
+  color:#166534;
+}
+
+.owner-not-found{
+  margin-top:40px;
+  border-radius:20px;
+  text-align:center;
+}
+
+.owner-admin-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+}
+
+.owner-admin-summary{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:14px 0;
+}
+
+.owner-admin-summary span{
+  background:#f1f5f9;
+  border-radius:999px;
+  padding:7px 11px;
+  color:#475569;
+}
+
+.owner-admin-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.owner-admin-item{
+  border:1px solid #dbe4ee;
+  border-radius:14px;
+  overflow:hidden;
+  background:#fff;
+}
+
+.owner-admin-item summary{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  cursor:pointer;
+  padding:14px 16px;
+  list-style:none;
+}
+
+.owner-admin-item summary::-webkit-details-marker{
+  display:none;
+}
+
+.owner-admin-item summary > div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.owner-admin-item summary span:not(.owner-status){
+  color:#64748b;
+  font-size:13px;
+}
+
+.owner-admin-actions,
+.owner-admin-data,
+.owner-admin-docs{
+  padding:0 16px 14px;
+}
+
+.owner-admin-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.owner-admin-actions a{
+  text-decoration:none;
+}
+
+.owner-summary-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  background:#f8fafc;
+  border-radius:10px;
+  padding:12px;
+}
+
+.owner-admin-doc-group{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-bottom:10px;
+}
+
+@media(max-width:760px){
+  .public-owner-shell{
+    padding:0 0 24px;
+  }
+
+  .public-owner-header{
+    border-radius:0;
+    padding:16px;
+  }
+
+  .public-owner-header h1{
+    font-size:21px;
+  }
+
+  .public-owner-header img{
+    width:68px;
+  }
+
+  .public-owner-card{
+    border-radius:0;
+    padding:12px;
+  }
+
+  .owner-grid,
+  .owner-doc-grid,
+  .owner-summary-grid{
+    grid-template-columns:1fr;
+  }
+
+  .owner-submit{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .owner-submit .btn{
+    width:100%;
+  }
+}
