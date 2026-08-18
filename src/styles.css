@@ -70289,3 +70289,10 @@
     width:100%;
   }
 }
+
+
+/* v3.5.1 - ajustes da ficha do proprietário */
+.owner-status.disabled{background:#e2e8f0;color:#475569;}
+.owner-admin-item:has(.owner-status.disabled){opacity:.78;background:#f8fafc;}
+
+.owner-status-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}

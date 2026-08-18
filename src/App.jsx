@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.0-ficha-proprietario";
+const APP_VERSION = "Castan Realtime v3.5.1-ficha-proprietario-ajustes";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -27,7 +27,7 @@ function emptyOwnerForm(){
     conta_nome_titular:"", conta_cpf_titular:"", banco:"", agencia:"",
     conta_numero:"", conta_tipo:"", conta_conjunta:"", conta_conjunta_nome:"",
     imovel_endereco:"", imovel_bairro:"", imovel_cidade:"", imovel_cep:"",
-    vagas:"", disponivel_venda:"", prazo_locacao:"", valor_aluguel:"",
+    vagas:"", disponivel_venda:"", aceita_pet:"", prazo_locacao:"", valor_aluguel:"",
     valor_condominio:"", condominio_em_dia:"",
     iptu_valor:"", iptu_contribuinte:"", iptu_vaga:"",
     iptu_dividido:"", iptu_proporcao:"",
@@ -50,6 +50,167 @@ function novoTokenFicha(){
   }
   return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 }
+
+function ownerChoiceLabel(value){
+  const labels={
+    sim:"Sim", nao:"Não", corrente:"Corrente", poupanca:"Poupança",
+    "30_residencial":"30 meses residencial", "24_comercial":"24 meses comercial",
+    castan:"Castan", proprietario:"Proprietário"
+  };
+  return labels[value]||value||"-";
+}
+
+function latin1PdfText(value){
+  return String(value??"-")
+    .replace(/[–—]/g,"-")
+    .replace(/[“”]/g,'"')
+    .replace(/[‘’]/g,"'")
+    .replace(/[^\x00-\xFF]/g,"?");
+}
+
+function pdfEscape(value){
+  return latin1PdfText(value)
+    .replace(/\\/g,"\\\\")
+    .replace(/\(/g,"\\(")
+    .replace(/\)/g,"\\)");
+}
+
+function pdfLatin1Bytes(value){
+  const s=latin1PdfText(value);
+  const bytes=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)bytes[i]=s.charCodeAt(i)&255;
+  return bytes;
+}
+
+function baixarFichaPdf(ficha){
+  if(!ficha?.dados)return;
+  const d=ficha.dados||{};
+  const pages=[];
+  let lines=[];
+  let y=790;
+
+  const newPage=()=>{
+    if(lines.length)pages.push(lines);
+    lines=[];
+    y=790;
+  };
+  const addText=(text,{x=45,size=9,bold=false,gap=13}={})=>{
+    if(y<55)newPage();
+    lines.push({text:latin1PdfText(text),x,y,size,bold});
+    y-=gap;
+  };
+  const wrap=(text,max=76)=>{
+    const words=latin1PdfText(text).split(/\s+/);
+    const out=[];
+    let cur="";
+    words.forEach(w=>{
+      const next=cur?`${cur} ${w}`:w;
+      if(next.length>max&&cur){out.push(cur);cur=w;}else cur=next;
+    });
+    if(cur)out.push(cur);
+    return out.length?out:["-"];
+  };
+  const field=(label,value)=>{
+    const prefix=`${label}: `;
+    const wrapped=wrap(`${prefix}${String(value??"-")||"-"}`,82);
+    wrapped.forEach((t,i)=>addText(t,{x:i===0?45:57,size:9,bold:false,gap:12}));
+  };
+  const section=(title)=>{
+    y-=4;
+    if(y<70)newPage();
+    addText(title,{x:45,size:11,bold:true,gap:16});
+  };
+
+  addText("CASTAN IMÓVEIS",{x:45,size:17,bold:true,gap:20});
+  addText("Ficha Cadastral do Proprietário",{x:45,size:13,bold:true,gap:18});
+  field("Código do imóvel",ficha.codigo_imovel||"-");
+  field("Recebida em",ficha.submitted_at?new Date(ficha.submitted_at).toLocaleString("pt-BR"):"-");
+
+  section("Dados do proprietário");
+  [["Nome",d.nome],["RG",d.rg],["CPF",d.cpf],["Estado civil",d.estado_civil],["Profissão",d.profissao],["Nacionalidade",d.nacionalidade],["E-mail",d.email],["Fone",d.fone],["Endereço residencial",d.endereco_residencial],["Bairro",d.bairro_residencial],["CEP",d.cep_residencial],["Cidade",d.cidade_residencial]].forEach(([a,b])=>field(a,b));
+
+  section("Dados da conta");
+  [["Nome do titular",d.conta_nome_titular],["CPF do titular",d.conta_cpf_titular],["Banco",d.banco],["Agência",d.agencia],["Conta nº",d.conta_numero],["Tipo da conta",ownerChoiceLabel(d.conta_tipo)],["Conta conjunta",ownerChoiceLabel(d.conta_conjunta)],["Segundo titular",d.conta_conjunta_nome]].forEach(([a,b])=>field(a,b));
+
+  section("Dados do imóvel alugado");
+  [["Endereço",d.imovel_endereco],["Bairro",d.imovel_bairro],["Cidade",d.imovel_cidade],["CEP",d.imovel_cep],["Vagas",d.vagas],["Disponível para venda",ownerChoiceLabel(d.disponivel_venda)],["Aceita pet",ownerChoiceLabel(d.aceita_pet)],["Prazo de locação",ownerChoiceLabel(d.prazo_locacao)],["Valor do aluguel negociado",d.valor_aluguel]].forEach(([a,b])=>field(a,b));
+
+  section("Condomínio e IPTU");
+  [["Valor do condomínio ordinário",d.valor_condominio],["Condomínio em dia",ownerChoiceLabel(d.condominio_em_dia)],["Valor IPTU",d.iptu_valor],["Nº contribuinte IPTU",d.iptu_contribuinte],["IPTU da vaga",d.iptu_vaga],["IPTU dividido",ownerChoiceLabel(d.iptu_dividido)],["Proporção da cobrança (%)",d.iptu_proporcao]].forEach(([a,b])=>field(a,b));
+
+  section("Sabesp");
+  [["Nº do RGI",d.sabesp_rgi],["Conta em aberto",ownerChoiceLabel(d.sabesp_conta_aberta)],["Cobrança individual",ownerChoiceLabel(d.sabesp_cobranca_individual)]].forEach(([a,b])=>field(a,b));
+
+  section("Enel");
+  [["Nº instalação",d.enel_instalacao],["CPF cadastrado",d.enel_cpf],["Conta em aberto",ownerChoiceLabel(d.enel_conta_aberta)],["Cobrança individual",ownerChoiceLabel(d.enel_cobranca_individual)]].forEach(([a,b])=>field(a,b));
+
+  section("Comgás");
+  [["Código do usuário",d.comgas_codigo],["CPF cadastrado",d.comgas_cpf],["Conta em aberto",ownerChoiceLabel(d.comgas_conta_aberta)]].forEach(([a,b])=>field(a,b));
+
+  section("Pagamentos e pintura");
+  [["Responsável condomínio/IPTU",ownerChoiceLabel(d.responsavel_pagamentos)],["Pintura nova (menos de 3 meses)",ownerChoiceLabel(d.pintura_nova)],["Data da pintura",d.pintura_data],["Cor da tinta",d.pintura_cor]].forEach(([a,b])=>field(a,b));
+  newPage();
+
+  const objects=[];
+  const addObj=(content)=>{objects.push(content);return objects.length;};
+  const catalog=addObj("");
+  const pagesObj=addObj("");
+  const fontNormal=addObj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  const fontBold=addObj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  const pageRefs=[];
+
+  pages.forEach(page=>{
+    const commands=page.map(item=>
+      `BT /${item.bold?"F2":"F1"} ${item.size} Tf ${item.x} ${item.y} Td (${pdfEscape(item.text)}) Tj ET`
+    ).join("\n");
+    const streamBytes=pdfLatin1Bytes(commands);
+    const contentObj=addObj({stream:commands,length:streamBytes.length});
+    const pageObj=addObj(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 ${fontNormal} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentObj} 0 R >>`);
+    pageRefs.push(pageObj);
+  });
+
+  objects[catalog-1]=`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
+  objects[pagesObj-1]=`<< /Type /Pages /Kids [${pageRefs.map(r=>`${r} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
+
+  const chunks=[];
+  let offset=0;
+  const push=(value)=>{
+    const b=value instanceof Uint8Array?value:pdfLatin1Bytes(value);
+    chunks.push(b); offset+=b.length;
+  };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const offsets=[0];
+  objects.forEach((obj,i)=>{
+    offsets[i+1]=offset;
+    push(`${i+1} 0 obj\n`);
+    if(typeof obj==="object"&&obj.stream!==undefined){
+      push(`<< /Length ${obj.length} >>\nstream\n`);
+      push(obj.stream);
+      push("\nendstream\n");
+    }else push(String(obj));
+    push("\nendobj\n");
+  });
+  const xrefOffset=offset;
+  push(`xref\n0 ${objects.length+1}\n`);
+  push("0000000000 65535 f \n");
+  for(let i=1;i<=objects.length;i++)push(`${String(offsets[i]).padStart(10,"0")} 00000 n \n`);
+  push(`trailer\n<< /Size ${objects.length+1} /Root ${catalog} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  const total=chunks.reduce((n,b)=>n+b.length,0);
+  const pdfBytes=new Uint8Array(total);
+  let pos=0;
+  chunks.forEach(b=>{pdfBytes.set(b,pos);pos+=b.length;});
+  const blob=new Blob([pdfBytes],{type:"application/pdf"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`ficha-proprietario-${ficha.codigo_imovel||"imovel"}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
 const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
 
 const COLORS = ["#B91C1C","#1E5A8A","#15803D","#C05621","#7E22CE","#0F766E","#BE123C","#2563EB","#D97706","#047857","#9333EA","#0284C7","#DC2626","#4F46E5","#65A30D","#DB2777"];
@@ -2223,6 +2384,37 @@ function exportReport(){
     if(data?.signedUrl)window.open(data.signedUrl,"_blank","noopener,noreferrer");
   }
 
+  async function alterarStatusLinkFicha(ficha,ativo){
+    const texto=ativo
+      ? "Reativar este link para permitir novo acesso do proprietário?"
+      : "Desativar este link? Os dados, o status da ficha e os documentos já recebidos serão preservados.";
+    if(!window.confirm(texto))return;
+
+    const {error}=await supabase
+      .from("fichas_proprietario")
+      .update({link_ativo:Boolean(ativo),updated_at:new Date().toISOString()})
+      .eq("id",ficha.id);
+    if(error)return alert(error.message);
+    await loadAll();
+  }
+
+  async function excluirFichaProprietario(ficha){
+    if(!isAdmin)return alert("Somente o administrador pode excluir fichas.");
+    if(!window.confirm("EXCLUIR DEFINITIVAMENTE ESTA FICHA? Esta ação apagará também os documentos enviados e não poderá ser desfeita."))return;
+
+    const docs=fichaProprietarioDocs.filter(d=>d.ficha_id===ficha.id);
+    const paths=docs.map(d=>d.storage_path).filter(Boolean);
+    if(paths.length){
+      const {error:storageError}=await supabase.storage.from(FICHA_BUCKET).remove(paths);
+      if(storageError)return alert(storageError.message);
+    }
+    const {error:docError}=await supabase.from("ficha_proprietario_documentos").delete().eq("ficha_id",ficha.id);
+    if(docError)return alert(docError.message);
+    const {error}=await supabase.from("fichas_proprietario").delete().eq("id",ficha.id);
+    if(error)return alert(error.message);
+    await loadAll();
+  }
+
   function startNewVisit(day=null, horario=null){
     if(!canCreateVisit)return alert("Seu perfil não pode criar visitas.");
 
@@ -2839,6 +3031,9 @@ function exportReport(){
               onGerar={gerarLinkFichaProprietario}
               onCopiar={copiarLinkFicha}
               onDownload={baixarDocumentoFicha}
+              onStatusLink={alterarStatusLinkFicha}
+              onExcluir={excluirFichaProprietario}
+              isAdmin={isAdmin}
             />
           }
 
@@ -3889,6 +4084,15 @@ function PublicOwnerForm({token}){
 
   const setField=(key,value)=>setForm(prev=>({...prev,[key]:value}));
 
+  const carregarDocs=useCallback(async(fichaId)=>{
+    const {data:docsData}=await supabase
+      .from("ficha_proprietario_documentos")
+      .select("*")
+      .eq("ficha_id",fichaId)
+      .order("created_at",{ascending:false});
+    setDocs(docsData||[]);
+  },[]);
+
   const carregar=useCallback(async()=>{
     setLoading(true);
     const {data,error}=await supabase
@@ -3905,16 +4109,9 @@ function PublicOwnerForm({token}){
 
     setFicha(data);
     setForm({...emptyOwnerForm(),...(data.dados||{})});
-
-    const {data:docsData}=await supabase
-      .from("ficha_proprietario_documentos")
-      .select("*")
-      .eq("ficha_id",data.id)
-      .order("created_at",{ascending:false});
-
-    setDocs(docsData||[]);
+    await carregarDocs(data.id);
     setLoading(false);
-  },[token]);
+  },[token,carregarDocs]);
 
   useEffect(()=>{carregar()},[carregar]);
 
@@ -3922,6 +4119,23 @@ function PublicOwnerForm({token}){
     if(!ficha || !files?.length)return;
     setUploading(categoria);
     setMessage("");
+
+    // Salva o que já foi digitado antes do upload para não perder informações.
+    const {error:draftError}=await supabase
+      .from("fichas_proprietario")
+      .update({
+        nome_proprietario:form.nome||ficha.nome_proprietario||null,
+        dados:form,
+        updated_at:new Date().toISOString()
+      })
+      .eq("id",ficha.id)
+      .eq("token",token);
+
+    if(draftError){
+      setUploading("");
+      setMessage(`Não foi possível salvar o rascunho antes do upload: ${draftError.message}`);
+      return;
+    }
 
     for(const file of Array.from(files)){
       if(file.size>12*1024*1024){
@@ -3960,7 +4174,7 @@ function PublicOwnerForm({token}){
     }
 
     setUploading("");
-    await carregar();
+    await carregarDocs(ficha.id);
   }
 
   async function abrirDocumento(doc){
@@ -3975,15 +4189,33 @@ function PublicOwnerForm({token}){
 
     const obrigatorios=[
       ["nome","Nome"],
+      ["rg","RG"],
       ["cpf","CPF"],
+      ["estado_civil","Estado civil"],
+      ["profissao","Profissão"],
+      ["nacionalidade","Nacionalidade"],
+      ["email","E-mail"],
       ["fone","Fone"],
+      ["endereco_residencial","Endereço residencial"],
+      ["bairro_residencial","Bairro residencial"],
+      ["cep_residencial","CEP residencial"],
+      ["cidade_residencial","Cidade residencial"],
+      ["conta_nome_titular","Nome do titular da conta"],
+      ["conta_cpf_titular","CPF do titular da conta"],
+      ["banco","Banco"],
+      ["agencia","Agência"],
+      ["conta_numero","Número da conta"],
+      ["conta_tipo","Tipo da conta"],
+      ["conta_conjunta","Conta conjunta - Sim ou Não"],
       ["imovel_endereco","Endereço do imóvel"],
       ["disponivel_venda","Disponibilidade para venda"],
-      ["prazo_locacao","Prazo de locação"],
-      ["responsavel_pagamentos","Responsável pelos pagamentos"]
+      ["aceita_pet","Aceita pet"]
     ];
 
     const faltando=obrigatorios.filter(([key])=>!String(form[key]||"").trim()).map(([,label])=>label);
+    if(form.conta_conjunta==="sim"&&!String(form.conta_conjunta_nome||"").trim()){
+      faltando.push("Nome do segundo titular da conta conjunta");
+    }
     if(faltando.length){
       setMessage(`Preencha os campos obrigatórios: ${faltando.join(", ")}.`);
       return;
@@ -4028,6 +4260,16 @@ function PublicOwnerForm({token}){
     </div>;
   }
 
+  if(ficha.link_ativo===false){
+    return <div className="public-owner-shell">
+      <div className="public-owner-card owner-not-found">
+        <h1>Castan Imóveis</h1>
+        <h2>Link desativado</h2>
+        <p>Este link não está mais disponível para preenchimento. Entre em contato com a Castan Imóveis se precisar de um novo acesso.</p>
+      </div>
+    </div>;
+  }
+
   return <div className="public-owner-shell">
     <header className="public-owner-header">
       <img src="/logo-castan-agenda.jpeg" alt="Castan Imóveis" onError={e=>{e.currentTarget.style.display="none"}}/>
@@ -4045,29 +4287,29 @@ function PublicOwnerForm({token}){
 
       <OwnerSection title="Dados do proprietário">
         <OwnerTextField label="Nome" value={form.nome} onChange={v=>setField("nome",v)} required/>
-        <OwnerTextField label="RG" value={form.rg} onChange={v=>setField("rg",v)}/>
+        <OwnerTextField label="RG" value={form.rg} onChange={v=>setField("rg",v)} required/>
         <OwnerTextField label="CPF" value={form.cpf} onChange={v=>setField("cpf",v)} required/>
-        <OwnerTextField label="Estado civil" value={form.estado_civil} onChange={v=>setField("estado_civil",v)}/>
-        <OwnerTextField label="Profissão" value={form.profissao} onChange={v=>setField("profissao",v)}/>
-        <OwnerTextField label="Nacionalidade" value={form.nacionalidade} onChange={v=>setField("nacionalidade",v)}/>
-        <OwnerTextField label="E-mail" type="email" value={form.email} onChange={v=>setField("email",v)}/>
+        <OwnerTextField label="Estado civil" value={form.estado_civil} onChange={v=>setField("estado_civil",v)} required/>
+        <OwnerTextField label="Profissão" value={form.profissao} onChange={v=>setField("profissao",v)} required/>
+        <OwnerTextField label="Nacionalidade" value={form.nacionalidade} onChange={v=>setField("nacionalidade",v)} required/>
+        <OwnerTextField label="E-mail" type="email" value={form.email} onChange={v=>setField("email",v)} required/>
         <OwnerTextField label="Fone" value={form.fone} onChange={v=>setField("fone",v)} required/>
-        <OwnerTextField label="Endereço residencial" value={form.endereco_residencial} onChange={v=>setField("endereco_residencial",v)}/>
-        <OwnerTextField label="Bairro" value={form.bairro_residencial} onChange={v=>setField("bairro_residencial",v)}/>
-        <OwnerTextField label="CEP" value={form.cep_residencial} onChange={v=>setField("cep_residencial",v)}/>
-        <OwnerTextField label="Cidade" value={form.cidade_residencial} onChange={v=>setField("cidade_residencial",v)}/>
+        <OwnerTextField label="Endereço residencial" value={form.endereco_residencial} onChange={v=>setField("endereco_residencial",v)} required/>
+        <OwnerTextField label="Bairro" value={form.bairro_residencial} onChange={v=>setField("bairro_residencial",v)} required/>
+        <OwnerTextField label="CEP" value={form.cep_residencial} onChange={v=>setField("cep_residencial",v)} required/>
+        <OwnerTextField label="Cidade" value={form.cidade_residencial} onChange={v=>setField("cidade_residencial",v)} required/>
       </OwnerSection>
 
       <OwnerSection title="Dados da conta">
-        <OwnerTextField label="Nome do titular" value={form.conta_nome_titular} onChange={v=>setField("conta_nome_titular",v)}/>
-        <OwnerTextField label="CPF do titular" value={form.conta_cpf_titular} onChange={v=>setField("conta_cpf_titular",v)}/>
-        <OwnerTextField label="Banco" value={form.banco} onChange={v=>setField("banco",v)}/>
-        <OwnerTextField label="Agência" value={form.agencia} onChange={v=>setField("agencia",v)}/>
-        <OwnerTextField label="Conta nº" value={form.conta_numero} onChange={v=>setField("conta_numero",v)}/>
-        <ChoiceField label="Tipo da conta" value={form.conta_tipo} onChange={v=>setField("conta_tipo",v)} options={[["corrente","Corrente"],["poupanca","Poupança"]]}/>
-        <ChoiceField label="A conta é conjunta?" value={form.conta_conjunta} onChange={v=>setField("conta_conjunta",v)} options={[["sim","Sim"],["nao","Não"]]}/>
+        <OwnerTextField label="Nome do titular" value={form.conta_nome_titular} onChange={v=>setField("conta_nome_titular",v)} required/>
+        <OwnerTextField label="CPF do titular" value={form.conta_cpf_titular} onChange={v=>setField("conta_cpf_titular",v)} required/>
+        <OwnerTextField label="Banco" value={form.banco} onChange={v=>setField("banco",v)} required/>
+        <OwnerTextField label="Agência" value={form.agencia} onChange={v=>setField("agencia",v)} required/>
+        <OwnerTextField label="Conta nº" value={form.conta_numero} onChange={v=>setField("conta_numero",v)} required/>
+        <ChoiceField label="Tipo da conta" value={form.conta_tipo} onChange={v=>setField("conta_tipo",v)} required options={[["corrente","Corrente"],["poupanca","Poupança"]]}/>
+        <ChoiceField label="A conta é conjunta?" value={form.conta_conjunta} onChange={v=>setField("conta_conjunta",v)} required options={[["sim","Sim"],["nao","Não"]]}/>
         {form.conta_conjunta==="sim"&&
-          <OwnerTextField label="Nome do segundo titular da conta conjunta" value={form.conta_conjunta_nome} onChange={v=>setField("conta_conjunta_nome",v)}/>
+          <OwnerTextField label="Nome do segundo titular da conta conjunta" value={form.conta_conjunta_nome} onChange={v=>setField("conta_conjunta_nome",v)} required/>
         }
       </OwnerSection>
 
@@ -4078,7 +4320,8 @@ function PublicOwnerForm({token}){
         <OwnerTextField label="CEP" value={form.imovel_cep} onChange={v=>setField("imovel_cep",v)}/>
         <OwnerTextField label="Vagas" value={form.vagas} onChange={v=>setField("vagas",v)}/>
         <ChoiceField label="Seu imóvel está disponível para venda?" value={form.disponivel_venda} onChange={v=>setField("disponivel_venda",v)} options={[["sim","Sim"],["nao","Não"]]} required/>
-        <ChoiceField label="Prazo de locação" value={form.prazo_locacao} onChange={v=>setField("prazo_locacao",v)} options={[["30_residencial","30 meses residencial"],["24_comercial","24 meses comercial"]]} required/>
+        <ChoiceField label="Aceita pet?" value={form.aceita_pet} onChange={v=>setField("aceita_pet",v)} options={[["sim","Sim"],["nao","Não"]]} required/>
+        <ChoiceField label="Prazo de locação" value={form.prazo_locacao} onChange={v=>setField("prazo_locacao",v)} options={[["30_residencial","30 meses residencial"],["24_comercial","24 meses comercial"]]}/>
         <OwnerTextField label="Valor do aluguel negociado" value={form.valor_aluguel} onChange={v=>setField("valor_aluguel",v)} placeholder="R$"/>
       </OwnerSection>
 
@@ -4117,7 +4360,7 @@ function PublicOwnerForm({token}){
       </OwnerSection>
 
       <OwnerSection title="Responsável pelos pagamentos do condomínio e IPTU">
-        <ChoiceField label="Responsável" value={form.responsavel_pagamentos} onChange={v=>setField("responsavel_pagamentos",v)} options={[["castan","Castan"],["proprietario","Proprietário"]]} required/>
+        <ChoiceField label="Responsável" value={form.responsavel_pagamentos} onChange={v=>setField("responsavel_pagamentos",v)} options={[["castan","Castan"],["proprietario","Proprietário"]]}/>
         <div className="owner-info full">
           <strong>Castan:</strong> a Castan fica responsável por efetuar os pagamentos e a taxa de administração é cobrada sobre aluguel e encargos.<br/>
           <strong>Proprietário:</strong> a Castan repassa os encargos ao proprietário e a taxa de administração é cobrada somente sobre o aluguel.
@@ -4174,7 +4417,7 @@ function PublicOwnerForm({token}){
   </div>;
 }
 
-function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload}){
+function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,onStatusLink,onExcluir,isAdmin}){
   return <Card title="Fichas de Proprietários">
     <div className="owner-admin-toolbar">
       <div>
@@ -4187,6 +4430,7 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload}
       <span><b>{fichas.length}</b> fichas</span>
       <span><b>{fichas.filter(f=>f.status==="pendente").length}</b> pendentes</span>
       <span><b>{fichas.filter(f=>f.status==="preenchida").length}</b> preenchidas</span>
+      <span><b>{fichas.filter(f=>f.link_ativo===false).length}</b> links desativados</span>
     </div>
 
     <div className="owner-admin-list">
@@ -4198,14 +4442,23 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload}
               <strong>{f.codigo_imovel||"Sem código"} — {f.nome_proprietario||f.dados?.nome||"Proprietário não informado"}</strong>
               <span>Criada em {f.created_at?new Date(f.created_at).toLocaleDateString("pt-BR"):"-"}</span>
             </div>
-            <span className={`owner-status ${f.status==="preenchida"?"done":"pending"}`}>
-              {f.status==="preenchida"?"Preenchida":"Pendente"}
-            </span>
+            <div className="owner-status-wrap">
+              <span className={`owner-status ${f.status==="preenchida"?"done":"pending"}`}>
+                {f.status==="preenchida"?"Preenchida":"Pendente"}
+              </span>
+              {f.link_ativo===false&&<span className="owner-status disabled">Link desativado</span>}
+            </div>
           </summary>
 
           <div className="owner-admin-actions">
-            <button className="btn ghost" onClick={()=>onCopiar(f.token)}><Copy size={15}/> Copiar link</button>
-            <a className="btn ghost" href={fichaLink(f.token)} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Abrir ficha</a>
+            {f.link_ativo!==false&&<button className="btn ghost" onClick={()=>onCopiar(f.token)}><Copy size={15}/> Copiar link</button>}
+            {f.link_ativo!==false&&<a className="btn ghost" href={fichaLink(f.token)} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Abrir ficha</a>}
+            {f.status==="preenchida"&&<button className="btn ghost" onClick={()=>baixarFichaPdf(f)}><Download size={15}/> Baixar PDF</button>}
+            {f.link_ativo!==false
+              ? <button className="btn warn" onClick={()=>onStatusLink(f,false)}>Desativar link</button>
+              : <button className="btn ghost" onClick={()=>onStatusLink(f,true)}>Reativar link</button>
+            }
+            {isAdmin&&<button className="btn danger" onClick={()=>onExcluir(f)}><Trash2 size={15}/> Excluir ficha</button>}
           </div>
 
           {f.status==="preenchida"&&<div className="owner-admin-data">
@@ -4215,7 +4468,8 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload}
               <span><b>CPF:</b> {f.dados?.cpf||"-"}</span>
               <span><b>Telefone:</b> {f.dados?.fone||"-"}</span>
               <span><b>Imóvel:</b> {f.dados?.imovel_endereco||"-"}</span>
-              <span><b>Venda:</b> {f.dados?.disponivel_venda||"-"}</span>
+              <span><b>Venda:</b> {ownerChoiceLabel(f.dados?.disponivel_venda)}</span>
+              <span><b>Aceita pet:</b> {ownerChoiceLabel(f.dados?.aceita_pet)}</span>
               <span><b>Pagamentos:</b> {f.dados?.responsavel_pagamentos||"-"}</span>
             </div>
           </div>}
