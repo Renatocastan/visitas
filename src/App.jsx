@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.1-ficha-proprietario-ajustes";
+const APP_VERSION = "Castan Realtime v3.5.2-pf-pj-pdf-formulario";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -11,7 +11,7 @@ const isFotoAnuncio = v => v?.tipo_agendamento===TIPO_FOTO_ANUNCIO;
 const VISITOWN_LABEL = "Visitown";
 const FICHA_BUCKET = "fichas-proprietarios";
 const FICHA_DOC_CATEGORIAS = [
-  ["rg_cpf","RG e CPF do proprietário"],
+  ["rg_cpf","Documentos de identificação (RG/CPF ou CNPJ)"],
   ["conta_luz","Conta de luz"],
   ["conta_agua","Conta de água"],
   ["conta_gas","Conta de gás"],
@@ -21,6 +21,9 @@ const FICHA_DOC_CATEGORIAS = [
 
 function emptyOwnerForm(){
   return {
+    tipo_proprietario:"",
+    empresa_razao_social:"", empresa_nome_fantasia:"", empresa_cnpj:"", empresa_inscricao_estadual:"",
+    empresa_email:"", empresa_fone:"", empresa_endereco:"", empresa_bairro:"", empresa_cep:"", empresa_cidade:"",
     nome:"", rg:"", cpf:"", estado_civil:"", profissao:"", nacionalidade:"",
     email:"", fone:"", endereco_residencial:"", bairro_residencial:"",
     cep_residencial:"", cidade_residencial:"",
@@ -55,7 +58,8 @@ function ownerChoiceLabel(value){
   const labels={
     sim:"Sim", nao:"Não", corrente:"Corrente", poupanca:"Poupança",
     "30_residencial":"30 meses residencial", "24_comercial":"24 meses comercial",
-    castan:"Castan", proprietario:"Proprietário"
+    castan:"Castan", proprietario:"Proprietário",
+    pf:"Pessoa Física", pj:"Pessoa Jurídica"
   };
   return labels[value]||value||"-";
 }
@@ -85,130 +89,55 @@ function pdfLatin1Bytes(value){
 function baixarFichaPdf(ficha){
   if(!ficha?.dados)return;
   const d=ficha.dados||{};
-  const pages=[];
-  let lines=[];
-  let y=790;
-
-  const newPage=()=>{
-    if(lines.length)pages.push(lines);
-    lines=[];
-    y=790;
-  };
-  const addText=(text,{x=45,size=9,bold=false,gap=13}={})=>{
-    if(y<55)newPage();
-    lines.push({text:latin1PdfText(text),x,y,size,bold});
-    y-=gap;
-  };
-  const wrap=(text,max=76)=>{
-    const words=latin1PdfText(text).split(/\s+/);
-    const out=[];
-    let cur="";
-    words.forEach(w=>{
-      const next=cur?`${cur} ${w}`:w;
-      if(next.length>max&&cur){out.push(cur);cur=w;}else cur=next;
-    });
-    if(cur)out.push(cur);
-    return out.length?out:["-"];
-  };
-  const field=(label,value)=>{
-    const prefix=`${label}: `;
-    const wrapped=wrap(`${prefix}${String(value??"-")||"-"}`,82);
-    wrapped.forEach((t,i)=>addText(t,{x:i===0?45:57,size:9,bold:false,gap:12}));
-  };
-  const section=(title)=>{
-    y-=4;
-    if(y<70)newPage();
-    addText(title,{x:45,size:11,bold:true,gap:16});
-  };
-
-  addText("CASTAN IMÓVEIS",{x:45,size:17,bold:true,gap:20});
-  addText("Ficha Cadastral do Proprietário",{x:45,size:13,bold:true,gap:18});
-  field("Código do imóvel",ficha.codigo_imovel||"-");
-  field("Recebida em",ficha.submitted_at?new Date(ficha.submitted_at).toLocaleString("pt-BR"):"-");
-
-  section("Dados do proprietário");
-  [["Nome",d.nome],["RG",d.rg],["CPF",d.cpf],["Estado civil",d.estado_civil],["Profissão",d.profissao],["Nacionalidade",d.nacionalidade],["E-mail",d.email],["Fone",d.fone],["Endereço residencial",d.endereco_residencial],["Bairro",d.bairro_residencial],["CEP",d.cep_residencial],["Cidade",d.cidade_residencial]].forEach(([a,b])=>field(a,b));
-
-  section("Dados da conta");
-  [["Nome do titular",d.conta_nome_titular],["CPF do titular",d.conta_cpf_titular],["Banco",d.banco],["Agência",d.agencia],["Conta nº",d.conta_numero],["Tipo da conta",ownerChoiceLabel(d.conta_tipo)],["Conta conjunta",ownerChoiceLabel(d.conta_conjunta)],["Segundo titular",d.conta_conjunta_nome]].forEach(([a,b])=>field(a,b));
-
-  section("Dados do imóvel alugado");
-  [["Endereço",d.imovel_endereco],["Bairro",d.imovel_bairro],["Cidade",d.imovel_cidade],["CEP",d.imovel_cep],["Vagas",d.vagas],["Disponível para venda",ownerChoiceLabel(d.disponivel_venda)],["Aceita pet",ownerChoiceLabel(d.aceita_pet)],["Prazo de locação",ownerChoiceLabel(d.prazo_locacao)],["Valor do aluguel negociado",d.valor_aluguel]].forEach(([a,b])=>field(a,b));
-
-  section("Condomínio e IPTU");
-  [["Valor do condomínio ordinário",d.valor_condominio],["Condomínio em dia",ownerChoiceLabel(d.condominio_em_dia)],["Valor IPTU",d.iptu_valor],["Nº contribuinte IPTU",d.iptu_contribuinte],["IPTU da vaga",d.iptu_vaga],["IPTU dividido",ownerChoiceLabel(d.iptu_dividido)],["Proporção da cobrança (%)",d.iptu_proporcao]].forEach(([a,b])=>field(a,b));
-
-  section("Sabesp");
-  [["Nº do RGI",d.sabesp_rgi],["Conta em aberto",ownerChoiceLabel(d.sabesp_conta_aberta)],["Cobrança individual",ownerChoiceLabel(d.sabesp_cobranca_individual)]].forEach(([a,b])=>field(a,b));
-
-  section("Enel");
-  [["Nº instalação",d.enel_instalacao],["CPF cadastrado",d.enel_cpf],["Conta em aberto",ownerChoiceLabel(d.enel_conta_aberta)],["Cobrança individual",ownerChoiceLabel(d.enel_cobranca_individual)]].forEach(([a,b])=>field(a,b));
-
-  section("Comgás");
-  [["Código do usuário",d.comgas_codigo],["CPF cadastrado",d.comgas_cpf],["Conta em aberto",ownerChoiceLabel(d.comgas_conta_aberta)]].forEach(([a,b])=>field(a,b));
-
-  section("Pagamentos e pintura");
-  [["Responsável condomínio/IPTU",ownerChoiceLabel(d.responsavel_pagamentos)],["Pintura nova (menos de 3 meses)",ownerChoiceLabel(d.pintura_nova)],["Data da pintura",d.pintura_data],["Cor da tinta",d.pintura_cor]].forEach(([a,b])=>field(a,b));
-  newPage();
-
-  const objects=[];
-  const addObj=(content)=>{objects.push(content);return objects.length;};
-  const catalog=addObj("");
-  const pagesObj=addObj("");
-  const fontNormal=addObj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
-  const fontBold=addObj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
-  const pageRefs=[];
-
-  pages.forEach(page=>{
-    const commands=page.map(item=>
-      `BT /${item.bold?"F2":"F1"} ${item.size} Tf ${item.x} ${item.y} Td (${pdfEscape(item.text)}) Tj ET`
-    ).join("\n");
-    const streamBytes=pdfLatin1Bytes(commands);
-    const contentObj=addObj({stream:commands,length:streamBytes.length});
-    const pageObj=addObj(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 ${fontNormal} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentObj} 0 R >>`);
-    pageRefs.push(pageObj);
-  });
-
-  objects[catalog-1]=`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
-  objects[pagesObj-1]=`<< /Type /Pages /Kids [${pageRefs.map(r=>`${r} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
-
-  const chunks=[];
-  let offset=0;
-  const push=(value)=>{
-    const b=value instanceof Uint8Array?value:pdfLatin1Bytes(value);
-    chunks.push(b); offset+=b.length;
-  };
-  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-  const offsets=[0];
-  objects.forEach((obj,i)=>{
-    offsets[i+1]=offset;
-    push(`${i+1} 0 obj\n`);
-    if(typeof obj==="object"&&obj.stream!==undefined){
-      push(`<< /Length ${obj.length} >>\nstream\n`);
-      push(obj.stream);
-      push("\nendstream\n");
-    }else push(String(obj));
-    push("\nendobj\n");
-  });
-  const xrefOffset=offset;
-  push(`xref\n0 ${objects.length+1}\n`);
-  push("0000000000 65535 f \n");
-  for(let i=1;i<=objects.length;i++)push(`${String(offsets[i]).padStart(10,"0")} 00000 n \n`);
-  push(`trailer\n<< /Size ${objects.length+1} /Root ${catalog} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
-
-  const total=chunks.reduce((n,b)=>n+b.length,0);
-  const pdfBytes=new Uint8Array(total);
-  let pos=0;
-  chunks.forEach(b=>{pdfBytes.set(b,pos);pos+=b.length;});
-  const blob=new Blob([pdfBytes],{type:"application/pdf"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;
-  a.download=`ficha-proprietario-${ficha.codigo_imovel||"imovel"}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  const esc=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const val=v=>esc(String(v??"").trim()||"-");
+  const choice=v=>val(ownerChoiceLabel(v));
+  const mark=(current,id,label)=>`<span class="choice ${current===id?"checked":""}"><span class="box">${current===id?"✓":""}</span>${esc(label)}</span>`;
+  const field=(label,value)=>`<div class="pdf-field"><span>${esc(label)}</span><strong>${val(value)}</strong></div>`;
+  const section=(title,body)=>`<section><h2>${esc(title)}</h2><div class="grid">${body}</div></section>`;
+  const choiceField=(label,current,options)=>`<div class="pdf-field full"><span>${esc(label)}</span><div class="choices">${options.map(([id,t])=>mark(current,id,t)).join("")}</div></div>`;
+  const pfFields=()=>[
+    field(d.tipo_proprietario==="pj"?"Nome do representante":"Nome",d.nome),field("RG",d.rg),field("CPF",d.cpf),
+    field("Estado civil",d.estado_civil),field("Profissão",d.profissao),field("Nacionalidade",d.nacionalidade),
+    field("E-mail",d.email),field("Fone",d.fone),field("Endereço residencial",d.endereco_residencial),
+    field("Bairro",d.bairro_residencial),field("CEP",d.cep_residencial),field("Cidade",d.cidade_residencial)
+  ].join("");
+  const company=d.tipo_proprietario==="pj"?section("Dados da empresa",[
+    field("Razão Social",d.empresa_razao_social),field("Nome Fantasia",d.empresa_nome_fantasia),field("CNPJ",d.empresa_cnpj),
+    field("Inscrição Estadual",d.empresa_inscricao_estadual),field("E-mail",d.empresa_email),field("Telefone",d.empresa_fone),
+    field("Endereço da empresa",d.empresa_endereco),field("Bairro",d.empresa_bairro),field("CEP",d.empresa_cep),field("Cidade",d.empresa_cidade)
+  ].join("")):"";
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Ficha ${esc(ficha.codigo_imovel||"")}</title><style>
+    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#17324d;margin:0;font-size:10.5px}.header{background:#123b63;color:white;padding:16px 18px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.header h1{font-size:19px;margin:0 0 4px}.header p{margin:0}.badge{background:white;color:#123b63;padding:6px 10px;border-radius:16px;font-weight:bold}section{border:1px solid #ccd8e4;border-radius:9px;margin:0 0 10px;overflow:hidden;break-inside:avoid}h2{font-size:13px;background:#eef4f9;margin:0;padding:8px 10px;border-bottom:1px solid #ccd8e4}.grid{display:grid;grid-template-columns:1fr 1fr}.pdf-field{min-height:43px;padding:7px 9px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}.pdf-field:nth-child(even){border-right:0}.pdf-field span:first-child{display:block;font-size:8.5px;color:#64748b;margin-bottom:4px}.pdf-field strong{font-size:10.5px;color:#172b3d}.full{grid-column:1/-1;border-right:0}.choices{display:flex;gap:14px;flex-wrap:wrap}.choice{display:inline-flex!important;align-items:center;gap:5px;color:#334155!important;font-size:10px!important;margin:0!important}.box{width:15px;height:15px;border:1.5px solid #64748b;display:inline-flex!important;align-items:center;justify-content:center;margin:0!important;color:white!important}.choice.checked .box{background:#123b63;border-color:#123b63}.footer{text-align:center;color:#64748b;font-size:8.5px;margin-top:10px}.print-note{font-size:9px;color:#64748b;margin:0 0 10px}@media print{.print-note{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+    <div class="header"><div><h1>CASTAN IMÓVEIS — Ficha Cadastral do Proprietário</h1><p>Código do imóvel: <b>${val(ficha.codigo_imovel)}</b> &nbsp; • &nbsp; Recebida em: ${val(ficha.submitted_at?new Date(ficha.submitted_at).toLocaleString("pt-BR"):"-")}</p></div><div class="badge">${d.tipo_proprietario==="pj"?"PESSOA JURÍDICA":"PESSOA FÍSICA"}</div></div>
+    <p class="print-note">Na janela de impressão, escolha <b>Salvar como PDF</b>. O arquivo será gerado com o mesmo formato visual desta ficha.</p>
+    ${section("Tipo de proprietário",choiceField("Tipo",d.tipo_proprietario,[["pf","Pessoa Física"],["pj","Pessoa Jurídica"]]))}
+    ${company}
+    ${section(d.tipo_proprietario==="pj"?"Representante legal da empresa":"Dados do proprietário",pfFields())}
+    ${section("Dados da conta",[
+      field("Nome do titular",d.conta_nome_titular),field("CPF do titular",d.conta_cpf_titular),field("Banco",d.banco),field("Agência",d.agencia),field("Conta nº",d.conta_numero),
+      choiceField("Tipo da conta",d.conta_tipo,[["corrente","Corrente"],["poupanca","Poupança"]]),choiceField("Conta conjunta",d.conta_conjunta,[["sim","Sim"],["nao","Não"]]),
+      d.conta_conjunta==="sim"?field("Segundo titular",d.conta_conjunta_nome):""
+    ].join(""))}
+    ${section("Dados do imóvel alugado",[
+      field("Endereço",d.imovel_endereco),field("Bairro",d.imovel_bairro),field("Cidade",d.imovel_cidade),field("CEP",d.imovel_cep),field("Vagas",d.vagas),field("Valor do aluguel negociado",d.valor_aluguel),
+      choiceField("Disponível para venda?",d.disponivel_venda,[["sim","Sim"],["nao","Não"]]),choiceField("Aceita pet?",d.aceita_pet,[["sim","Sim"],["nao","Não"]]),choiceField("Prazo de locação",d.prazo_locacao,[["30_residencial","30 meses residencial"],["24_comercial","24 meses comercial"]])
+    ].join(""))}
+    ${section("Condomínio e IPTU",[
+      field("Valor do condomínio ordinário",d.valor_condominio),field("Valor IPTU",d.iptu_valor),field("Nº contribuinte IPTU",d.iptu_contribuinte),field("IPTU da vaga",d.iptu_vaga),field("Proporção da cobrança (%)",d.iptu_proporcao),
+      choiceField("Condomínio em dia?",d.condominio_em_dia,[["sim","Sim"],["nao","Não"]]),choiceField("IPTU dividido?",d.iptu_dividido,[["sim","Sim"],["nao","Não"]])
+    ].join(""))}
+    ${section("Sabesp",field("Nº do RGI",d.sabesp_rgi)+choiceField("Tem conta em aberto?",d.sabesp_conta_aberta,[["sim","Sim"],["nao","Não"]])+choiceField("Cobrança individual?",d.sabesp_cobranca_individual,[["sim","Sim"],["nao","Não"]]))}
+    ${section("Enel",field("Nº instalação",d.enel_instalacao)+field("CPF cadastrado",d.enel_cpf)+choiceField("Tem conta em aberto?",d.enel_conta_aberta,[["sim","Sim"],["nao","Não"]])+choiceField("Cobrança individual?",d.enel_cobranca_individual,[["sim","Sim"],["nao","Não"]]))}
+    ${section("Comgás",field("Código do usuário",d.comgas_codigo)+field("CPF cadastrado",d.comgas_cpf)+choiceField("Tem conta em aberto?",d.comgas_conta_aberta,[["sim","Sim"],["nao","Não"]]))}
+    ${section("Pagamentos e pintura",choiceField("Responsável condomínio/IPTU",d.responsavel_pagamentos,[["castan","Castan"],["proprietario","Proprietário"]])+choiceField("Pintura nova (menos de 3 meses)?",d.pintura_nova,[["sim","Sim"],["nao","Não"]])+field("Data da pintura",d.pintura_data)+field("Cor da tinta",d.pintura_cor))}
+    <div class="footer">R. da Mooca, 2879 – Mooca – CEP 03165-001 – São Paulo – Fone 2694-0655</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+  </body></html>`;
+  const w=window.open("","_blank");
+  if(!w)return alert("O navegador bloqueou a abertura do PDF. Libere pop-ups para este site e tente novamente.");
+  w.document.open();w.document.write(html);w.document.close();
 }
 
 const isVisitownRegistro = v => v?.mostrador_id===VISITOWN_ID || String(v?.mostrador_externo||"").toLowerCase()==="visitown";
@@ -4036,19 +3965,23 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
 
 
 function ChoiceField({label,value,onChange,options,required=false}){
+  const groupId=React.useId();
   return <fieldset className="owner-choice">
     <legend>{label}{required?" *":""}</legend>
-    <div className="owner-choice-options">
+    <div className="owner-choice-options" role="radiogroup" aria-label={label}>
       {options.map(([id,text])=>
-        <label key={id} className={value===id?"selected":""}>
-          <input
-            type="radio"
-            name={`${label}-${id}`}
-            checked={value===id}
-            onChange={()=>onChange(id)}
-          />
+        <button
+          type="button"
+          key={id}
+          className={value===id?"selected":""}
+          role="radio"
+          aria-checked={value===id}
+          onClick={()=>onChange(id)}
+        >
+          <span className="owner-radio-dot" aria-hidden="true">{value===id?"✓":""}</span>
           <span>{text}</span>
-        </label>
+          <input type="radio" name={groupId} value={id} checked={value===id} onChange={()=>onChange(id)} tabIndex={-1}/>
+        </button>
       )}
     </div>
   </fieldset>;
@@ -4188,14 +4121,25 @@ function PublicOwnerForm({token}){
     if(!ficha)return;
 
     const obrigatorios=[
-      ["nome","Nome"],
-      ["rg","RG"],
-      ["cpf","CPF"],
+      ["tipo_proprietario","Tipo de proprietário"],
+      ...(form.tipo_proprietario==="pj"?[
+        ["empresa_razao_social","Razão social"],
+        ["empresa_cnpj","CNPJ"],
+        ["empresa_email","E-mail da empresa"],
+        ["empresa_fone","Telefone da empresa"],
+        ["empresa_endereco","Endereço da empresa"],
+        ["empresa_bairro","Bairro da empresa"],
+        ["empresa_cep","CEP da empresa"],
+        ["empresa_cidade","Cidade da empresa"]
+      ]:[]),
+      ["nome",form.tipo_proprietario==="pj"?"Nome do representante":"Nome"],
+      ["rg",form.tipo_proprietario==="pj"?"RG do representante":"RG"],
+      ["cpf",form.tipo_proprietario==="pj"?"CPF do representante":"CPF"],
       ["estado_civil","Estado civil"],
       ["profissao","Profissão"],
       ["nacionalidade","Nacionalidade"],
-      ["email","E-mail"],
-      ["fone","Fone"],
+      ["email",form.tipo_proprietario==="pj"?"E-mail do representante":"E-mail"],
+      ["fone",form.tipo_proprietario==="pj"?"Fone do representante":"Fone"],
       ["endereco_residencial","Endereço residencial"],
       ["bairro_residencial","Bairro residencial"],
       ["cep_residencial","CEP residencial"],
@@ -4285,8 +4229,25 @@ function PublicOwnerForm({token}){
     <form className="public-owner-card" onSubmit={salvar}>
       {message&&<div className={`owner-message ${message.includes("sucesso")?"success":""}`}>{message}</div>}
 
-      <OwnerSection title="Dados do proprietário">
-        <OwnerTextField label="Nome" value={form.nome} onChange={v=>setField("nome",v)} required/>
+      <OwnerSection title="Tipo de proprietário">
+        <ChoiceField label="Selecione" value={form.tipo_proprietario} onChange={v=>setField("tipo_proprietario",v)} options={[["pf","Pessoa Física"],["pj","Pessoa Jurídica"]]} required/>
+      </OwnerSection>
+
+      {form.tipo_proprietario==="pj"&&<OwnerSection title="Dados da empresa">
+        <OwnerTextField label="Razão Social" value={form.empresa_razao_social} onChange={v=>setField("empresa_razao_social",v)} required/>
+        <OwnerTextField label="Nome Fantasia" value={form.empresa_nome_fantasia} onChange={v=>setField("empresa_nome_fantasia",v)}/>
+        <OwnerTextField label="CNPJ" value={form.empresa_cnpj} onChange={v=>setField("empresa_cnpj",v)} required/>
+        <OwnerTextField label="Inscrição Estadual" value={form.empresa_inscricao_estadual} onChange={v=>setField("empresa_inscricao_estadual",v)}/>
+        <OwnerTextField label="E-mail" type="email" value={form.empresa_email} onChange={v=>setField("empresa_email",v)} required/>
+        <OwnerTextField label="Telefone" value={form.empresa_fone} onChange={v=>setField("empresa_fone",v)} required/>
+        <OwnerTextField label="Endereço da empresa" value={form.empresa_endereco} onChange={v=>setField("empresa_endereco",v)} required/>
+        <OwnerTextField label="Bairro" value={form.empresa_bairro} onChange={v=>setField("empresa_bairro",v)} required/>
+        <OwnerTextField label="CEP" value={form.empresa_cep} onChange={v=>setField("empresa_cep",v)} required/>
+        <OwnerTextField label="Cidade" value={form.empresa_cidade} onChange={v=>setField("empresa_cidade",v)} required/>
+      </OwnerSection>}
+
+      {form.tipo_proprietario&&<OwnerSection title={form.tipo_proprietario==="pj"?"Representante legal da empresa":"Dados do proprietário"}>
+        <OwnerTextField label={form.tipo_proprietario==="pj"?"Nome do representante":"Nome"} value={form.nome} onChange={v=>setField("nome",v)} required/>
         <OwnerTextField label="RG" value={form.rg} onChange={v=>setField("rg",v)} required/>
         <OwnerTextField label="CPF" value={form.cpf} onChange={v=>setField("cpf",v)} required/>
         <OwnerTextField label="Estado civil" value={form.estado_civil} onChange={v=>setField("estado_civil",v)} required/>
@@ -4298,7 +4259,7 @@ function PublicOwnerForm({token}){
         <OwnerTextField label="Bairro" value={form.bairro_residencial} onChange={v=>setField("bairro_residencial",v)} required/>
         <OwnerTextField label="CEP" value={form.cep_residencial} onChange={v=>setField("cep_residencial",v)} required/>
         <OwnerTextField label="Cidade" value={form.cidade_residencial} onChange={v=>setField("cidade_residencial",v)} required/>
-      </OwnerSection>
+      </OwnerSection>}
 
       <OwnerSection title="Dados da conta">
         <OwnerTextField label="Nome do titular" value={form.conta_nome_titular} onChange={v=>setField("conta_nome_titular",v)} required/>
@@ -4464,8 +4425,9 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
           {f.status==="preenchida"&&<div className="owner-admin-data">
             <h3>Resumo preenchido</h3>
             <div className="owner-summary-grid">
-              <span><b>Nome:</b> {f.dados?.nome||"-"}</span>
-              <span><b>CPF:</b> {f.dados?.cpf||"-"}</span>
+              <span><b>Tipo:</b> {ownerChoiceLabel(f.dados?.tipo_proprietario)}</span>
+              <span><b>{f.dados?.tipo_proprietario==="pj"?"Razão Social":"Nome"}:</b> {f.dados?.tipo_proprietario==="pj"?(f.dados?.empresa_razao_social||"-"):(f.dados?.nome||"-")}</span>
+              <span><b>{f.dados?.tipo_proprietario==="pj"?"CNPJ":"CPF"}:</b> {f.dados?.tipo_proprietario==="pj"?(f.dados?.empresa_cnpj||"-"):(f.dados?.cpf||"-")}</span>
               <span><b>Telefone:</b> {f.dados?.fone||"-"}</span>
               <span><b>Imóvel:</b> {f.dados?.imovel_endereco||"-"}</span>
               <span><b>Venda:</b> {ownerChoiceLabel(f.dados?.disponivel_venda)}</span>

@@ -70296,3 +70296,26 @@
 .owner-admin-item:has(.owner-status.disabled){opacity:.78;background:#f8fafc;}
 
 .owner-status-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+
+/* v3.5.2 — seleções totalmente clicáveis */
+.owner-choice-options button{
+  appearance:none;
+  -webkit-appearance:none;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:44px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  padding:9px 13px;
+  background:#fff;
+  color:#334155;
+  font:inherit;
+  cursor:pointer;
+  text-align:left;
+}
+.owner-choice-options button:hover{border-color:#123B63;background:#f8fbff;}
+.owner-choice-options button.selected{border-color:#123B63;background:#eaf2f9;color:#123B63;font-weight:900;box-shadow:0 0 0 1px #123B63 inset;}
+.owner-choice-options button input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;}
+.owner-radio-dot{width:20px;height:20px;border:2px solid #94a3b8;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;font-size:12px;font-weight:900;}
+.owner-choice-options button.selected .owner-radio-dot{border-color:#123B63;background:#123B63;color:#fff;}
