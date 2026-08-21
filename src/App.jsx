@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.2-pf-pj-pdf-formulario";
+const APP_VERSION = "Castan Realtime v3.5.3-ficha-versionada-bloqueada";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -45,6 +45,12 @@ function emptyOwnerForm(){
 function fichaLink(token){
   const base=window.location.origin+window.location.pathname;
   return `${base}?ficha=${encodeURIComponent(token)}`;
+}
+
+async function sha256Hex(value){
+  const bytes=new TextEncoder().encode(String(value??""));
+  const digest=await window.crypto.subtle.digest("SHA-256",bytes);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
 
 function novoTokenFicha(){
@@ -2279,6 +2285,12 @@ function exportReport(){
         nome_proprietario:String(nome).trim()||null,
         status:"pendente",
         dados:emptyOwnerForm(),
+        version_no:1,
+        parent_ficha_id:null,
+        correction_reason:null,
+        locked_at:null,
+        submission_hash:null,
+        link_ativo:true,
         created_by:user?.id||null
       })
       .select("*")
@@ -2314,9 +2326,13 @@ function exportReport(){
   }
 
   async function alterarStatusLinkFicha(ficha,ativo){
+    if(ficha.status==="preenchida" || ficha.locked_at){
+      return alert("Ficha enviada não pode ter o mesmo link reativado. Use Reabrir para correção para preservar a versão original.");
+    }
+
     const texto=ativo
-      ? "Reativar este link para permitir novo acesso do proprietário?"
-      : "Desativar este link? Os dados, o status da ficha e os documentos já recebidos serão preservados.";
+      ? "Reativar este link pendente para permitir novo acesso do proprietário?"
+      : "Desativar este link pendente? O rascunho e os documentos já recebidos serão preservados.";
     if(!window.confirm(texto))return;
 
     const {error}=await supabase
@@ -2325,6 +2341,79 @@ function exportReport(){
       .eq("id",ficha.id);
     if(error)return alert(error.message);
     await loadAll();
+  }
+
+  async function reabrirFichaParaCorrecao(ficha){
+    if(!canManageOwnerForms)return alert("Seu perfil não pode reabrir fichas.");
+    if(ficha.status!=="preenchida" && !ficha.locked_at){
+      return alert("Somente fichas já enviadas podem ser reabertas para correção.");
+    }
+
+    const motivos=[
+      "Alteração de conta bancária",
+      "Correção de CPF/CNPJ",
+      "Alteração de responsável por pagamentos",
+      "Correção cadastral",
+      "Outro"
+    ];
+
+    const escolha=window.prompt(
+      "Informe o motivo da correção:\n\n" +
+      motivos.map((m,i)=>`${i+1} - ${m}`).join("\n") +
+      "\n\nDigite o número ou escreva o motivo:"
+    );
+    if(!escolha || !String(escolha).trim())return;
+
+    const idxMotivo=Number(escolha)-1;
+    let motivo=Number.isInteger(idxMotivo)&&idxMotivo>=0&&idxMotivo<motivos.length
+      ? motivos[idxMotivo]
+      : String(escolha).trim();
+
+    if(motivo==="Outro"){
+      const detalhe=window.prompt("Descreva o motivo da correção:");
+      if(!detalhe || !String(detalhe).trim())return;
+      motivo=`Outro: ${String(detalhe).trim()}`;
+    }
+
+    if(!window.confirm(
+      `Criar uma nova versão pré-preenchida desta ficha?\n\n` +
+      `A versão ${ficha.version_no||1} permanecerá bloqueada e intacta.\n` +
+      `Motivo: ${motivo}`
+    ))return;
+
+    const token=novoTokenFicha();
+    const novaVersao=Math.max(2,Number(ficha.version_no||1)+1);
+
+    const {data,error}=await supabase
+      .from("fichas_proprietario")
+      .insert({
+        token,
+        codigo_imovel:ficha.codigo_imovel,
+        nome_proprietario:ficha.nome_proprietario||ficha.dados?.nome||null,
+        status:"pendente",
+        dados:{...emptyOwnerForm(),...(ficha.dados||{})},
+        version_no:novaVersao,
+        parent_ficha_id:ficha.id,
+        correction_reason:motivo,
+        locked_at:null,
+        submission_hash:null,
+        link_ativo:true,
+        created_by:user?.id||null
+      })
+      .select("*")
+      .single();
+
+    if(error)return alert(error.message);
+
+    const link=fichaLink(token);
+    try{await navigator.clipboard.writeText(link);}catch{}
+    await loadAll();
+
+    window.prompt(
+      `Versão ${novaVersao} criada e pré-preenchida.\nO link foi copiado. Envie ao proprietário:`,
+      link
+    );
+    return data;
   }
 
   async function excluirFichaProprietario(ficha){
@@ -2961,6 +3050,7 @@ function exportReport(){
               onCopiar={copiarLinkFicha}
               onDownload={baixarDocumentoFicha}
               onStatusLink={alterarStatusLinkFicha}
+              onReabrir={reabrirFichaParaCorrecao}
               onExcluir={excluirFichaProprietario}
               isAdmin={isAdmin}
             />
@@ -4050,6 +4140,10 @@ function PublicOwnerForm({token}){
 
   async function uploadDocumento(categoria,files){
     if(!ficha || !files?.length)return;
+    if(ficha.status==="preenchida" || ficha.locked_at || ficha.link_ativo===false){
+      setMessage("Esta ficha já foi enviada e está bloqueada. Não é possível anexar novos documentos.");
+      return;
+    }
     setUploading(categoria);
     setMessage("");
 
@@ -4165,8 +4259,22 @@ function PublicOwnerForm({token}){
       return;
     }
 
+    const confirmar=window.confirm(
+      "CONFIRMAR ENVIO DA FICHA?\n\n" +
+      "Após o envio, esta versão ficará bloqueada e não poderá mais ser alterada. " +
+      "Se for necessária alguma correção, a Castan deverá gerar uma nova versão pré-preenchida."
+    );
+    if(!confirmar)return;
+
     setSaving(true);
     setMessage("");
+
+    const agora=new Date().toISOString();
+    const conteudoHash=await sha256Hex(JSON.stringify({
+      codigo_imovel:ficha.codigo_imovel||"",
+      version_no:ficha.version_no||1,
+      dados:form
+    }));
 
     const {error}=await supabase
       .from("fichas_proprietario")
@@ -4174,11 +4282,15 @@ function PublicOwnerForm({token}){
         nome_proprietario:form.nome||ficha.nome_proprietario||null,
         dados:form,
         status:"preenchida",
-        submitted_at:new Date().toISOString(),
-        updated_at:new Date().toISOString()
+        submitted_at:agora,
+        locked_at:agora,
+        submission_hash:conteudoHash,
+        link_ativo:false,
+        updated_at:agora
       })
       .eq("id",ficha.id)
-      .eq("token",token);
+      .eq("token",token)
+      .is("locked_at",null);
 
     setSaving(false);
 
@@ -4187,7 +4299,7 @@ function PublicOwnerForm({token}){
       return;
     }
 
-    setMessage("Ficha enviada com sucesso para a Castan Imóveis.");
+    setMessage("Ficha enviada com sucesso. Esta versão foi bloqueada e não poderá mais ser alterada.");
     await carregar();
     window.scrollTo({top:0,behavior:"smooth"});
   }
@@ -4200,6 +4312,19 @@ function PublicOwnerForm({token}){
         <h1>Castan Imóveis</h1>
         <h2>Ficha não encontrada</h2>
         <p>Este link é inválido ou não está mais disponível.</p>
+      </div>
+    </div>;
+  }
+
+  if(ficha.status==="preenchida" || ficha.locked_at){
+    return <div className="public-owner-shell">
+      <div className="public-owner-card owner-not-found owner-locked">
+        <h1>Castan Imóveis</h1>
+        <h2>Ficha enviada com sucesso</h2>
+        <p>Esta ficha foi recebida e está bloqueada para alterações.</p>
+        <p><strong>Versão:</strong> {ficha.version_no||1}</p>
+        <p><strong>Enviada em:</strong> {ficha.submitted_at?new Date(ficha.submitted_at).toLocaleString("pt-BR"):"-"}</p>
+        <p>Se precisar corrigir alguma informação, entre em contato com a Castan Imóveis. Uma nova versão será disponibilizada já com os dados anteriores preenchidos.</p>
       </div>
     </div>;
   }
@@ -4219,7 +4344,8 @@ function PublicOwnerForm({token}){
       <img src="/logo-castan-agenda.jpeg" alt="Castan Imóveis" onError={e=>{e.currentTarget.style.display="none"}}/>
       <div>
         <h1>Ficha Cadastral do Proprietário</h1>
-        <p>Imóvel: <strong>{ficha.codigo_imovel||"-"}</strong></p>
+        <p>Imóvel: <strong>{ficha.codigo_imovel||"-"}</strong> — Versão <strong>{ficha.version_no||1}</strong></p>
+        {ficha.correction_reason&&<p className="owner-correction-note">Correção solicitada: {ficha.correction_reason}</p>}
       </div>
       <span className={`owner-status ${ficha.status==="preenchida"?"done":"pending"}`}>
         {ficha.status==="preenchida"?"Preenchida":"Pendente"}
@@ -4366,7 +4492,7 @@ function PublicOwnerForm({token}){
 
       <div className="owner-submit">
         <button className="btn primary" type="submit" disabled={saving}>
-          <Save size={17}/> {saving?"Enviando...":(ficha.status==="preenchida"?"Atualizar ficha":"Enviar ficha")}
+          <Save size={17}/> {saving?"Enviando...":"Enviar ficha definitivamente"}
         </button>
         <p>Ao enviar, os dados ficam disponíveis para a equipe da Castan Imóveis.</p>
       </div>
@@ -4378,7 +4504,7 @@ function PublicOwnerForm({token}){
   </div>;
 }
 
-function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,onStatusLink,onExcluir,isAdmin}){
+function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,onStatusLink,onReabrir,onExcluir,isAdmin}){
   return <Card title="Fichas de Proprietários">
     <div className="owner-admin-toolbar">
       <div>
@@ -4390,8 +4516,8 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
     <div className="owner-admin-summary">
       <span><b>{fichas.length}</b> fichas</span>
       <span><b>{fichas.filter(f=>f.status==="pendente").length}</b> pendentes</span>
-      <span><b>{fichas.filter(f=>f.status==="preenchida").length}</b> preenchidas</span>
-      <span><b>{fichas.filter(f=>f.link_ativo===false).length}</b> links desativados</span>
+      <span><b>{fichas.filter(f=>f.status==="preenchida").length}</b> enviadas/bloqueadas</span>
+      <span><b>{fichas.filter(f=>f.status==="pendente"&&f.link_ativo===false).length}</b> links pendentes desativados</span>
     </div>
 
     <div className="owner-admin-list">
@@ -4400,25 +4526,30 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
         return <details className="owner-admin-item" key={f.id}>
           <summary>
             <div>
-              <strong>{f.codigo_imovel||"Sem código"} — {f.nome_proprietario||f.dados?.nome||"Proprietário não informado"}</strong>
-              <span>Criada em {f.created_at?new Date(f.created_at).toLocaleDateString("pt-BR"):"-"}</span>
+              <strong>{f.codigo_imovel||"Sem código"} — {f.nome_proprietario||f.dados?.nome||"Proprietário não informado"} — v{f.version_no||1}</strong>
+              <span>
+                Criada em {f.created_at?new Date(f.created_at).toLocaleDateString("pt-BR"):"-"}
+                {f.submitted_at?` • Enviada em ${new Date(f.submitted_at).toLocaleString("pt-BR")}`:""}
+              </span>
+              {f.correction_reason&&<span className="owner-correction-admin">Motivo da correção: {f.correction_reason}</span>}
             </div>
             <div className="owner-status-wrap">
               <span className={`owner-status ${f.status==="preenchida"?"done":"pending"}`}>
-                {f.status==="preenchida"?"Preenchida":"Pendente"}
+                {f.status==="preenchida"?"Enviada e bloqueada":"Pendente"}
               </span>
-              {f.link_ativo===false&&<span className="owner-status disabled">Link desativado</span>}
+              {f.status==="pendente"&&f.link_ativo===false&&<span className="owner-status disabled">Link desativado</span>}
             </div>
           </summary>
 
           <div className="owner-admin-actions">
-            {f.link_ativo!==false&&<button className="btn ghost" onClick={()=>onCopiar(f.token)}><Copy size={15}/> Copiar link</button>}
-            {f.link_ativo!==false&&<a className="btn ghost" href={fichaLink(f.token)} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Abrir ficha</a>}
+            {f.status==="pendente"&&f.link_ativo!==false&&<button className="btn ghost" onClick={()=>onCopiar(f.token)}><Copy size={15}/> Copiar link</button>}
+            {f.status==="pendente"&&f.link_ativo!==false&&<a className="btn ghost" href={fichaLink(f.token)} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Abrir ficha</a>}
             {f.status==="preenchida"&&<button className="btn ghost" onClick={()=>baixarFichaPdf(f)}><Download size={15}/> Baixar PDF</button>}
-            {f.link_ativo!==false
+            {f.status==="preenchida"&&<button className="btn primary" onClick={()=>onReabrir(f)}>Reabrir para correção</button>}
+            {f.status==="pendente"&&(f.link_ativo!==false
               ? <button className="btn warn" onClick={()=>onStatusLink(f,false)}>Desativar link</button>
               : <button className="btn ghost" onClick={()=>onStatusLink(f,true)}>Reativar link</button>
-            }
+            )}
             {isAdmin&&<button className="btn danger" onClick={()=>onExcluir(f)}><Trash2 size={15}/> Excluir ficha</button>}
           </div>
 
@@ -4433,6 +4564,12 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
               <span><b>Venda:</b> {ownerChoiceLabel(f.dados?.disponivel_venda)}</span>
               <span><b>Aceita pet:</b> {ownerChoiceLabel(f.dados?.aceita_pet)}</span>
               <span><b>Pagamentos:</b> {f.dados?.responsavel_pagamentos||"-"}</span>
+            </div>
+            <div className="owner-audit-box">
+              <strong>Integridade do envio</strong>
+              <span>Versão: v{f.version_no||1}</span>
+              <span>Bloqueada em: {f.locked_at?new Date(f.locked_at).toLocaleString("pt-BR"):"-"}</span>
+              <span className="owner-hash">Hash SHA-256: {f.submission_hash||"Registro anterior sem hash"}</span>
             </div>
           </div>}
 

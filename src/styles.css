@@ -70319,3 +70319,50 @@
 .owner-choice-options button input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;}
 .owner-radio-dot{width:20px;height:20px;border:2px solid #94a3b8;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;font-size:12px;font-weight:900;}
 .owner-choice-options button.selected .owner-radio-dot{border-color:#123B63;background:#123B63;color:#fff;}
+
+
+/* v3.5.3 — envio definitivo, versões e auditoria */
+.owner-locked{
+  max-width:720px;
+  text-align:center;
+}
+
+.owner-locked h2{
+  color:#166534;
+}
+
+.owner-correction-note{
+  margin-top:6px !important;
+  padding:6px 9px;
+  border-radius:8px;
+  background:rgba(255,255,255,.12);
+  font-size:13px;
+}
+
+.owner-correction-admin{
+  color:#7c3aed !important;
+  font-weight:800;
+}
+
+.owner-audit-box{
+  margin-top:12px;
+  padding:12px;
+  border:1px solid #dbe4ee;
+  border-radius:10px;
+  background:#f8fafc;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  color:#475569;
+  font-size:12px;
+}
+
+.owner-audit-box strong{
+  color:#123B63;
+  font-size:13px;
+}
+
+.owner-hash{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  word-break:break-all;
+}
