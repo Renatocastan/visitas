@@ -70366,3 +70366,53 @@
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   word-break:break-all;
 }
+
+
+/* v3.5.4 — filtros das fichas de proprietários */
+.owner-admin-filters{
+  display:grid;
+  grid-template-columns:minmax(260px,2fr) minmax(160px,1fr) minmax(160px,1fr) auto;
+  gap:10px;
+  align-items:end;
+  margin:14px 0;
+  padding:14px;
+  border:1px solid #dbe4ee;
+  border-radius:14px;
+  background:#f8fafc;
+}
+
+.owner-admin-filters label{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.owner-admin-filters label span{
+  color:#334155;
+  font-weight:800;
+  font-size:13px;
+}
+
+.owner-admin-filters input{
+  min-height:42px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  padding:8px 10px;
+  background:#fff;
+}
+
+@media(max-width:900px){
+  .owner-admin-filters{
+    grid-template-columns:1fr 1fr;
+  }
+}
+
+@media(max-width:620px){
+  .owner-admin-filters{
+    grid-template-columns:1fr;
+  }
+
+  .owner-admin-filters .btn{
+    width:100%;
+  }
+}

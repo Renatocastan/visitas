@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.3-ficha-versionada-bloqueada";
+const APP_VERSION = "Castan Realtime v3.5.4-filtro-fichas";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -4505,6 +4505,30 @@ function PublicOwnerForm({token}){
 }
 
 function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,onStatusLink,onReabrir,onExcluir,isAdmin}){
+
+  const [busca,setBusca]=useState("");
+  const [dataInicio,setDataInicio]=useState("");
+  const [dataFim,setDataFim]=useState("");
+
+  const fichasFiltradas=fichas.filter(f=>{
+    const termo=String(busca||"").trim().toLowerCase();
+    const nome=String(
+      f.nome_proprietario||
+      f.dados?.nome||
+      f.dados?.empresa_razao_social||
+      ""
+    ).toLowerCase();
+    const codigo=String(f.codigo_imovel||"").toLowerCase();
+
+    const porBusca=!termo || nome.includes(termo) || codigo.includes(termo);
+
+    const dataBase=String(f.created_at||"").slice(0,10);
+    const porInicio=!dataInicio || dataBase>=dataInicio;
+    const porFim=!dataFim || dataBase<=dataFim;
+
+    return porBusca && porInicio && porFim;
+  });
+
   return <Card title="Fichas de Proprietários">
     <div className="owner-admin-toolbar">
       <div>
@@ -4513,15 +4537,49 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
       <button className="btn primary" onClick={onGerar}><Plus size={16}/> Gerar link da ficha</button>
     </div>
 
+    <div className="owner-admin-filters">
+      <label>
+        <span>Pesquisar</span>
+        <input
+          type="text"
+          placeholder="Nome do proprietário ou código do imóvel"
+          value={busca}
+          onChange={e=>setBusca(e.target.value)}
+        />
+      </label>
+
+      <label>
+        <span>Data inicial</span>
+        <input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)}/>
+      </label>
+
+      <label>
+        <span>Data final</span>
+        <input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/>
+      </label>
+
+      <button
+        className="btn ghost"
+        onClick={()=>{
+          setBusca("");
+          setDataInicio("");
+          setDataFim("");
+        }}
+      >
+        Limpar filtros
+      </button>
+    </div>
+
     <div className="owner-admin-summary">
-      <span><b>{fichas.length}</b> fichas</span>
+      <span><b>{fichasFiltradas.length}</b> exibidas</span>
+      <span><b>{fichas.length}</b> total</span>
       <span><b>{fichas.filter(f=>f.status==="pendente").length}</b> pendentes</span>
       <span><b>{fichas.filter(f=>f.status==="preenchida").length}</b> enviadas/bloqueadas</span>
       <span><b>{fichas.filter(f=>f.status==="pendente"&&f.link_ativo===false).length}</b> links pendentes desativados</span>
     </div>
 
     <div className="owner-admin-list">
-      {fichas.map(f=>{
+      {fichasFiltradas.map(f=>{
         const docs=documentos.filter(d=>d.ficha_id===f.id);
         return <details className="owner-admin-item" key={f.id}>
           <summary>
@@ -4591,7 +4649,7 @@ function FichasProprietarioPanel({fichas,documentos,onGerar,onCopiar,onDownload,
           </div>
         </details>;
       })}
-      {!fichas.length&&<Empty text="Nenhuma ficha de proprietário criada."/>}
+      {!fichasFiltradas.length&&<Empty text={fichas.length?"Nenhuma ficha encontrada com os filtros selecionados.":"Nenhuma ficha de proprietário criada."}/>} 
     </div>
   </Card>;
 }
