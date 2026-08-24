@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.4-filtro-fichas";
+const APP_VERSION = "Castan Realtime v3.5.5-confirmacao-whatsapp";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -409,11 +409,31 @@ const visitaMoment = v => {
   const dt=new Date(`${d}T${h}:00`);
   return Number.isNaN(dt.getTime()) ? new Date(0) : dt;
 };
+const confirmacaoVisitaLink=v=>{
+  if(!v?.confirmacao_token)return "";
+  const base=window.location.origin+window.location.pathname;
+  return `${base}?confirmar_visita=${encodeURIComponent(v.confirmacao_token)}`;
+};
+
 const whatsappClienteLink=v=>{
- let p=onlyDigits(v?.cliente_contato); if(!p)return "";
- if(!p.startsWith("55")) p="55"+p;
- const msg=`Olá, sou da Castan Imóveis. Estou entrando em contato sobre a visita agendada para o imóvel ${v?.endereco_imovel||""}.`;
- return `https://wa.me/${p}?text=${encodeURIComponent(msg)}`;
+  let p=onlyDigits(v?.cliente_contato); if(!p)return "";
+  if(!p.startsWith("55")) p="55"+p;
+
+  const nome=String(v?.cliente_nome||"").trim().split(/\s+/)[0]||"";
+  const horario=String(v?.horario_visita||"").slice(0,5);
+  const link=confirmacaoVisitaLink(v);
+
+  const msg=[
+    `Olá, ${nome}! 😊`,
+    `Passando para confirmar sua visita ao imóvel hoje, às ${horario}.`,
+    `Podemos confirmar sua presença?`,
+    "",
+    link
+      ? `Para confirmar ou cancelar a visita, acesse: ${link}`
+      : "Entre em contato conosco para confirmar ou cancelar a visita."
+  ].join("\n");
+
+  return `https://wa.me/${p}?text=${encodeURIComponent(msg)}`;
 };
 
 function exportCsv(filename, rows){
@@ -462,7 +482,9 @@ function emptyVisit(user, preUsers, mostradores){
 }
 
 export default function App(){
-  const fichaPublicaToken = new URLSearchParams(window.location.search).get("ficha");
+  const paramsPublicos = new URLSearchParams(window.location.search);
+  const fichaPublicaToken = paramsPublicos.get("ficha");
+  const confirmacaoVisitaToken = paramsPublicos.get("confirmar_visita");
   const [usuarios,setUsuarios]=useState([]);
   const [visitas,setVisitas]=useState([]);
   const [notificacoes,setNotificacoes]=useState([]);
@@ -2535,6 +2557,10 @@ function exportReport(){
     setCalendarMode("day");
   }
 
+  if(confirmacaoVisitaToken){
+    return <ConfirmacaoVisitaPublica token={confirmacaoVisitaToken}/>;
+  }
+
   if(fichaPublicaToken){
     return <PublicOwnerForm token={fichaPublicaToken}/>;
   }
@@ -3421,7 +3447,7 @@ function VisitCard({v,getUser,colorForUser,onClick}){
       {v.cliente_contato && (
         <p>
           <a href={whatsappClienteLink(v)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="whatsapp-link">
-            WhatsApp Cliente
+            Confirmar via WhatsApp
           </a>
         </p>
       )}
@@ -4002,7 +4028,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
           <p>{f.latitude&&f.longitude?`Localização capturada em ${f.geolocalizacao_data?brDateTime(f.geolocalizacao_data):"data não registrada"}`:"Nenhuma localização capturada."}</p>
           {f.latitude&&f.longitude&&<p><a href={mapLink(f.latitude,f.longitude)} target="_blank" rel="noreferrer">Abrir no Google Maps</a></p>}
           {f.endereco_imovel&&<p><a href={wazeAddressLink(f.endereco_imovel)} target="_blank" rel="noreferrer" className="waze-link">Abrir no Waze</a></p>}
-          {f.cliente_contato&&<p><a href={whatsappClienteLink(f)} target="_blank" rel="noreferrer" className="whatsapp-btn">WhatsApp Cliente</a></p>}
+          {f.cliente_contato&&<p><a href={whatsappClienteLink(f)} target="_blank" rel="noreferrer" className="whatsapp-btn">Confirmar via WhatsApp</a></p>}
           {!readOnly&&<button className="btn ghost" onClick={onCaptureLocation}><Navigation size={16}/> Capturar localização atual</button>}
         </div>
       </div>}
@@ -4053,6 +4079,154 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
   </div>;
 }
 
+
+
+function ConfirmacaoVisitaPublica({token}){
+  const [visita,setVisita]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [sending,setSending]=useState(false);
+  const [cancelando,setCancelando]=useState(false);
+  const [motivo,setMotivo]=useState("");
+  const [resultado,setResultado]=useState("");
+
+  const carregar=useCallback(async()=>{
+    setLoading(true);
+    const {data,error}=await supabase.rpc("obter_confirmacao_visita",{p_token:token});
+    if(error){
+      setVisita(null);
+      setLoading(false);
+      return;
+    }
+    const row=Array.isArray(data)?data[0]:data;
+    setVisita(row||null);
+    setLoading(false);
+  },[token]);
+
+  useEffect(()=>{carregar()},[carregar]);
+
+  async function responder(acao){
+    if(acao==="cancelar"&&!String(motivo||"").trim()){
+      return alert("Informe o motivo do cancelamento.");
+    }
+
+    setSending(true);
+    const {data,error}=await supabase.rpc("responder_confirmacao_visita",{
+      p_token:token,
+      p_acao:acao,
+      p_motivo:acao==="cancelar"?String(motivo).trim():null
+    });
+    setSending(false);
+
+    if(error){
+      alert(error.message);
+      return;
+    }
+
+    const row=Array.isArray(data)?data[0]:data;
+    if(row?.resultado==="confirmada"){
+      setResultado("confirmada");
+    }else if(row?.resultado==="cancelada"){
+      setResultado("cancelada");
+    }else{
+      setResultado(row?.resultado||"respondida");
+    }
+    await carregar();
+  }
+
+  if(loading){
+    return <div className="confirmacao-publica-shell"><div className="loading">Carregando visita...</div></div>;
+  }
+
+  if(!visita){
+    return <div className="confirmacao-publica-shell">
+      <div className="confirmacao-publica-card">
+        <h1>Castan Imóveis</h1>
+        <h2>Visita não encontrada</h2>
+        <p>Este link é inválido ou não está mais disponível.</p>
+      </div>
+    </div>;
+  }
+
+  const encerrada=["cancelada","concluida","nao_apareceu","contrato","reserva_cancelada"].includes(visita.status);
+  const jaConfirmada=visita.status==="confirmada";
+
+  if(resultado==="confirmada"||jaConfirmada){
+    return <div className="confirmacao-publica-shell">
+      <div className="confirmacao-publica-card success">
+        <div className="confirmacao-icon">✓</div>
+        <h1>Visita confirmada!</h1>
+        <p>Obrigado, {visita.cliente_nome||""}. Sua presença foi confirmada.</p>
+        <div className="confirmacao-detalhes">
+          <strong>{visita.codigo_imovel||"Imóvel"}</strong>
+          <span>{visita.endereco_imovel||""}</span>
+          <span>{String(visita.data_visita||"").split("-").reverse().join("/")} às {String(visita.horario_visita||"").slice(0,5)}</span>
+        </div>
+      </div>
+    </div>;
+  }
+
+  if(resultado==="cancelada"||visita.status==="cancelada"){
+    return <div className="confirmacao-publica-shell">
+      <div className="confirmacao-publica-card cancelled">
+        <div className="confirmacao-icon">×</div>
+        <h1>Visita cancelada</h1>
+        <p>Recebemos seu cancelamento. A equipe da Castan foi notificada.</p>
+      </div>
+    </div>;
+  }
+
+  if(encerrada){
+    return <div className="confirmacao-publica-shell">
+      <div className="confirmacao-publica-card">
+        <h1>Castan Imóveis</h1>
+        <h2>Esta visita já foi finalizada</h2>
+        <p>Não é mais possível responder por este link.</p>
+      </div>
+    </div>;
+  }
+
+  return <div className="confirmacao-publica-shell">
+    <div className="confirmacao-publica-card">
+      <div className="confirmacao-brand">CASTAN IMÓVEIS</div>
+      <h1>Olá, {String(visita.cliente_nome||"").trim().split(/\s+/)[0]||"cliente"}! 😊</h1>
+      <p className="confirmacao-intro">
+        Passando para confirmar sua visita ao imóvel hoje, às <strong>{String(visita.horario_visita||"").slice(0,5)}</strong>.
+      </p>
+      <p className="confirmacao-question">Podemos confirmar sua presença?</p>
+
+      <div className="confirmacao-detalhes">
+        <strong>{visita.codigo_imovel||"Imóvel"}</strong>
+        <span>{visita.endereco_imovel||""}</span>
+        <span>{String(visita.data_visita||"").split("-").reverse().join("/")} • {String(visita.horario_visita||"").slice(0,5)}</span>
+      </div>
+
+      {!cancelando
+        ? <div className="confirmacao-actions">
+            <button className="confirmacao-btn confirmar" disabled={sending} onClick={()=>responder("confirmar")}>
+              Confirmar visita
+            </button>
+            <button className="confirmacao-btn cancelar" disabled={sending} onClick={()=>setCancelando(true)}>
+              Cancelar visita
+            </button>
+          </div>
+        : <div className="confirmacao-cancel-box">
+            <label>
+              <span>Por favor, informe o motivo do cancelamento *</span>
+              <textarea value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Digite o motivo..."/>
+            </label>
+            <div className="confirmacao-actions">
+              <button className="confirmacao-btn voltar" disabled={sending} onClick={()=>{setCancelando(false);setMotivo("")}}>
+                Voltar
+              </button>
+              <button className="confirmacao-btn cancelar" disabled={sending||!String(motivo).trim()} onClick={()=>responder("cancelar")}>
+                {sending?"Enviando...":"Confirmar cancelamento"}
+              </button>
+            </div>
+          </div>
+      }
+    </div>
+  </div>;
+}
 
 function ChoiceField({label,value,onChange,options,required=false}){
   const groupId=React.useId();

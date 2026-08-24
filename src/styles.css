@@ -70416,3 +70416,175 @@
     width:100%;
   }
 }
+
+
+/* v3.5.5 — confirmação pública de visita via link do WhatsApp */
+.confirmacao-publica-shell{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px 16px;
+  background:#f3f6fa;
+  color:#123B63;
+}
+
+.confirmacao-publica-card{
+  width:min(100%,560px);
+  background:#fff;
+  border-radius:22px;
+  padding:28px;
+  box-shadow:0 18px 45px rgba(15,41,66,.14);
+  text-align:center;
+}
+
+.confirmacao-brand{
+  font-size:13px;
+  font-weight:1000;
+  letter-spacing:1.5px;
+  color:#B91C1C;
+  margin-bottom:18px;
+}
+
+.confirmacao-publica-card h1{
+  margin:0 0 12px;
+  color:#123B63;
+}
+
+.confirmacao-publica-card h2{
+  color:#123B63;
+}
+
+.confirmacao-intro{
+  font-size:17px;
+  line-height:1.5;
+  color:#475569;
+}
+
+.confirmacao-question{
+  font-size:19px;
+  font-weight:900;
+  color:#123B63;
+  margin:18px 0;
+}
+
+.confirmacao-detalhes{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  padding:15px;
+  border:1px solid #dbe4ee;
+  border-radius:14px;
+  background:#f8fafc;
+  margin:18px 0;
+  color:#475569;
+}
+
+.confirmacao-detalhes strong{
+  color:#123B63;
+  font-size:18px;
+}
+
+.confirmacao-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:16px;
+}
+
+.confirmacao-btn{
+  min-height:50px;
+  border:0;
+  border-radius:13px;
+  padding:11px 15px;
+  font-size:15px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.confirmacao-btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+.confirmacao-btn.confirmar{
+  background:#15803d;
+  color:#fff;
+}
+
+.confirmacao-btn.cancelar{
+  background:#b91c1c;
+  color:#fff;
+}
+
+.confirmacao-btn.voltar{
+  background:#e2e8f0;
+  color:#334155;
+}
+
+.confirmacao-cancel-box{
+  margin-top:18px;
+  text-align:left;
+  padding:15px;
+  border:1px solid #fecdd3;
+  background:#fff7f7;
+  border-radius:14px;
+}
+
+.confirmacao-cancel-box label{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  font-weight:800;
+}
+
+.confirmacao-cancel-box textarea{
+  min-height:100px;
+  resize:vertical;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  padding:10px;
+  font:inherit;
+}
+
+.confirmacao-icon{
+  width:64px;
+  height:64px;
+  border-radius:50%;
+  margin:0 auto 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:38px;
+  font-weight:900;
+}
+
+.confirmacao-publica-card.success .confirmacao-icon{
+  background:#dcfce7;
+  color:#15803d;
+}
+
+.confirmacao-publica-card.cancelled .confirmacao-icon{
+  background:#fee2e2;
+  color:#b91c1c;
+}
+
+@media(max-width:560px){
+  .confirmacao-publica-shell{
+    padding:0;
+    align-items:stretch;
+  }
+
+  .confirmacao-publica-card{
+    border-radius:0;
+    min-height:100vh;
+    padding:24px 18px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+
+  .confirmacao-actions{
+    grid-template-columns:1fr;
+  }
+}
