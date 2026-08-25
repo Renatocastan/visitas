@@ -70588,3 +70588,6 @@
     grid-template-columns:1fr;
   }
 }
+
+/* v3.5.6 — complemento do imóvel */
+.form input::placeholder{color:#94a3b8;}

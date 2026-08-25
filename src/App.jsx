@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.5-confirmacao-whatsapp";
+const APP_VERSION = "Castan Realtime v3.5.6-complemento-imovel";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -451,6 +451,7 @@ function emptyVisit(user, preUsers, mostradores){
     id:null,
     codigo_imovel:"",
     endereco_imovel:"",
+    complemento_imovel:"",
     proprietario_nome:"",
     proprietario_contato:"",
     cliente_nome:"",
@@ -1393,6 +1394,7 @@ export default function App(){
     const payload={
       codigo_imovel:isReservaAgenda?(f.codigo_imovel||"RESERVA"):f.codigo_imovel,
       endereco_imovel:isReservaAgenda?(f.endereco_imovel||"Reserva de agenda"):f.endereco_imovel,
+      complemento_imovel:isReservaAgenda?null:(f.complemento_imovel||null),
       proprietario_nome:isReservaAgenda?(f.proprietario_nome||"Reserva"):f.proprietario_nome,
       proprietario_contato:isReservaAgenda?(f.proprietario_contato||"Reserva"):f.proprietario_contato,
       cliente_nome:isReservaAgenda?(f.cliente_nome||"Reserva de agenda"):(isFotoAnuncioAgendamento?"Fotos para anúncio":f.cliente_nome),
@@ -3466,7 +3468,7 @@ function visitTooltip(v,getUser){
   return [
     `Imóvel: ${v.status==="reserva"?"RESERVA DE AGENDA":(v.codigo_imovel||"-")}`,
     `Cliente: ${v.cliente_nome||"-"}`,
-    `Endereço: ${v.endereco_imovel||"-"}`,
+    `Endereço: ${v.endereco_imovel||"-"}${v.complemento_imovel?` — ${v.complemento_imovel}`:""}`,
     `Pré: ${getUser?.(v.pre_atendimento_id)?.nome||"-"}`,
     `Mostrador: ${isVisitownRegistro(v)?VISITOWN_LABEL:(getUser?.(v.mostrador_id)?.nome||"-")}`,
     `Status: ${statusLabel(v.status)}`,
@@ -3904,6 +3906,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
           onBlur={valorAtual=>onCheckRevisit?.({...f,codigo_imovel:valorAtual,revisita_alertado_chave:""})}
         />
         <Field label="Endereço do imóvel *" value={f.endereco_imovel} disabled={limited} onChange={v=>setF({...f,endereco_imovel:v})}/>
+        <Field label="Complemento do imóvel" value={f.complemento_imovel||""} disabled={limited} onChange={v=>setF({...f,complemento_imovel:v})} placeholder="Ex.: Apto 84, Bloco B"/>
         <Field label="Nome do proprietário *" value={f.proprietario_nome} disabled={limited} onChange={v=>setF({...f,proprietario_nome:v})}/>
         <Field label="Contato do proprietário *" value={f.proprietario_contato} disabled={limited} onChange={v=>setF({...f,proprietario_contato:v})}/>
         {f.tipo_agendamento!==TIPO_FOTO_ANUNCIO&&<>
@@ -4892,13 +4895,14 @@ function UserModal({u,setU,onClose,onSave,isAdmin,currentUser}){
   </div>;
 }
 
-function Field({label,value,onChange,onBlur,type="text",disabled=false}){
+function Field({label,value,onChange,onBlur,type="text",disabled=false,placeholder=""}){
   return <label>
     <span>{label}</span>
     <input
       type={type}
       value={value||""}
       disabled={disabled}
+      placeholder={placeholder}
       onChange={e=>onChange(e.target.value)}
       onBlur={e=>onBlur?.(e.currentTarget.value)}
     />
