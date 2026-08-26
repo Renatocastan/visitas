@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.8-vapid-hotfix";
+const APP_VERSION = "Castan Realtime v3.5.9-push-multiplos-dispositivos";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -1069,14 +1069,8 @@ export default function App(){
 
       if(error)throw error;
 
-      try{
-        await supabase
-          .from("push_subscriptions")
-          .update({ativo:false,updated_at:new Date().toISOString()})
-          .eq("usuario_id",user.id)
-          .neq("endpoint",endpoint);
-      }catch{}
-
+      // Mantém todos os dispositivos ativos deste usuário.
+      // Cada navegador/computador/celular possui seu próprio endpoint.
       alert("Notificações em segundo plano ativadas neste aparelho.");
       return true;
     }catch(err){
