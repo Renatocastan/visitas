@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.13-whatsapp-proprietario-hotfix";
+const APP_VERSION = "Castan Realtime v3.5.14-admin-superusuario";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -546,6 +546,7 @@ export default function App(){
   const [modalUser,setModalUser]=useState(null);
   const [agendaBloqueios,setAgendaBloqueios]=useState([]);
   const [bloqueioForm,setBloqueioForm]=useState({
+    usuario_id:"",
     data_bloqueio:todayISO(),
     data_fim:todayISO(),
     horario_inicio:"09:00",
@@ -628,6 +629,7 @@ export default function App(){
 
   function hasPerm(chave, fallback=false){
     if(!user) return false;
+    if(isAdmin) return true;
     const defaults = DEFAULT_PERMISSOES[user.tipo] || {};
     const explicit = user.permissoes || {};
     if(Object.prototype.hasOwnProperty.call(explicit, chave)) return Boolean(explicit[chave]);
@@ -640,14 +642,18 @@ export default function App(){
   const canManageUsers = isAdmin || hasPerm("gerenciar_usuarios", false);
   const canDeleteVisits = isAdmin || isGestor || hasPerm("excluir_visita", false);
   const canViewReports = hasPerm("ver_relatorios", isAdmin||isGestor||isPre||isFechamento||isContratos);
-  const canStatusAvancouFechamento = hasPerm("status_avancou_fechamento", isFechamento);
-  const canStatusPosOk = hasPerm("status_pos_ok", isFechamento);
-  const canStatusContrato = hasPerm("status_contrato", isContratos);
+  const canStatusAvancouFechamento = isAdmin || hasPerm("status_avancou_fechamento", isFechamento);
+  const canStatusPosOk = isAdmin || hasPerm("status_pos_ok", isFechamento);
+  const canStatusContrato = isAdmin || hasPerm("status_contrato", isContratos);
 
   const isContratoVisibleVisit = v => Boolean(v?.checklist) || ["avancou_fechamento","pos_ok","contrato"].includes(v?.status);
 
-  const preUsers=usuarios.filter(u=>u.tipo==="pre_atendimento"&&u.ativo!==false);
-  const mostradores=usuarios.filter(u=>u.tipo==="mostrador"&&u.ativo!==false);
+  const preUsers=usuarios
+    .filter(u=>u.tipo==="pre_atendimento"&&(isAdmin||u.ativo!==false))
+    .map(u=>isAdmin&&u.ativo===false?{...u,nome:`${u.nome} (Inativo)`}:u);
+  const mostradores=usuarios
+    .filter(u=>u.tipo==="mostrador"&&(isAdmin||u.ativo!==false))
+    .map(u=>isAdmin&&u.ativo===false?{...u,nome:`${u.nome} (Inativo)`}:u);
   const mostradoresComVisitown=[...mostradores,{id:VISITOWN_ID,nome:VISITOWN_LABEL,externo:true}];
   const captadores=usuarios.filter(u=>u.tipo==="captador"&&u.ativo!==false);
   const fechamentoUsers=usuarios.filter(u=>u.tipo==="fechamento"&&u.ativo!==false);
@@ -1269,7 +1275,10 @@ export default function App(){
   }
 
   async function salvarBloqueioAgenda(){
-    if(!isMostrador)return alert("Somente mostradores podem bloquear a própria agenda.");
+    if(!isMostrador&&!isAdmin)return alert("Seu perfil não pode criar bloqueios de agenda.");
+
+    const usuarioBloqueio=isAdmin ? bloqueioForm.usuario_id : user?.id;
+    if(!usuarioBloqueio)return alert("Selecione o mostrador da agenda que será bloqueada.");
 
     if(!bloqueioForm.data_bloqueio || !bloqueioForm.data_fim || !bloqueioForm.horario_inicio || !bloqueioForm.horario_fim){
       return alert("Informe período inicial/final e horário inicial/final do bloqueio.");
@@ -1289,7 +1298,7 @@ export default function App(){
 
     const dias=datasEntre(bloqueioForm.data_bloqueio,bloqueioForm.data_fim);
     const registros=dias.map(data_bloqueio=>({
-      usuario_id:user.id,
+      usuario_id:usuarioBloqueio,
       data_bloqueio,
       horario_inicio:String(bloqueioForm.horario_inicio).slice(0,5),
       horario_fim:String(bloqueioForm.horario_fim).slice(0,5),
@@ -1302,6 +1311,7 @@ export default function App(){
     if(error)return alert(error.message);
 
     setBloqueioForm({
+      usuario_id:"",
       data_bloqueio:todayISO(),
       data_fim:todayISO(),
       horario_inicio:"09:00",
@@ -1315,12 +1325,49 @@ export default function App(){
   }
 
   async function removerBloqueioAgenda(id){
+    const bloqueio=agendaBloqueios.find(b=>b.id===id);
+    if(!bloqueio)return;
+    if(!isAdmin && !(isMostrador&&bloqueio.usuario_id===user?.id)){
+      return alert("Você não tem permissão para remover este bloqueio.");
+    }
+
     const ok=window.confirm("Deseja remover este bloqueio da agenda?");
     if(!ok)return;
 
     const {error}=await supabase.from("agenda_bloqueios").update({ativo:false}).eq("id",id);
     if(error)return alert(error.message);
     await loadAll();
+  }
+
+  async function editarBloqueioAgenda(b){
+    if(!isAdmin)return alert("Somente o administrador pode editar bloqueios de outros usuários.");
+
+    const data=window.prompt("Data do bloqueio (AAAA-MM-DD):",String(b.data_bloqueio||""));
+    if(!data)return;
+    const inicio=window.prompt("Horário inicial (HH:MM):",String(b.horario_inicio||"").slice(0,5));
+    if(!inicio)return;
+    const fim=window.prompt("Horário final (HH:MM):",String(b.horario_fim||"").slice(0,5));
+    if(!fim)return;
+    const justificativa=window.prompt("Justificativa:",String(b.justificativa||""));
+    if(justificativa===null)return;
+
+    if(String(fim).slice(0,5)<=String(inicio).slice(0,5)){
+      return alert("O horário final deve ser maior que o horário inicial.");
+    }
+
+    const {error}=await supabase
+      .from("agenda_bloqueios")
+      .update({
+        data_bloqueio:data,
+        horario_inicio:String(inicio).slice(0,5),
+        horario_fim:String(fim).slice(0,5),
+        justificativa:String(justificativa).trim()||"Ajustado pelo administrador"
+      })
+      .eq("id",b.id);
+
+    if(error)return alert(error.message);
+    await loadAll();
+    alert("Bloqueio atualizado.");
   }
 
   function doLogin(){
@@ -2702,7 +2749,7 @@ function exportReport(){
   }
 
   function openVisit(v){
-    const somenteLeitura = v.status==="cancelada" || !canEditVisit(v);
+    const somenteLeitura = !isAdmin && (v.status==="cancelada" || !canEditVisit(v));
     setModalVisit({...v,mostrador_id:isVisitown(v)?VISITOWN_ID:v.mostrador_id,valor_proposta:v.valor_proposta||"",somenteLeitura});
   }
 
@@ -3015,10 +3062,22 @@ function exportReport(){
           }
           {view==="bloquear_agenda"&&
             <Card title="Bloqueios de agenda">
-              <p className="hint">Consulte os bloqueios de agenda dos mostradores. Somente mostradores podem criar ou remover seus próprios bloqueios.</p>
+              <p className="hint">Mostradores podem administrar os próprios bloqueios. Administradores podem criar, editar ou remover qualquer bloqueio, inclusive de usuários inativos.</p>
 
-              {isMostrador&&<>
+              {(isMostrador||isAdmin)&&<>
               <div className="bloqueio-form">
+                {isAdmin&&
+                  <label className="full">
+                    <span>Mostrador *</span>
+                    <select value={bloqueioForm.usuario_id} onChange={e=>setBloqueioForm({...bloqueioForm,usuario_id:e.target.value})}>
+                      <option value="">Selecione o mostrador...</option>
+                      {usuarios
+                        .filter(u=>u.tipo==="mostrador")
+                        .map(u=><option key={u.id} value={u.id}>{u.nome}{u.ativo===false?" (Inativo)":""}</option>)
+                      }
+                    </select>
+                  </label>
+                }
                 <label>
                   <span>Período de bloqueio - início *</span>
                   <input type="date" value={bloqueioForm.data_bloqueio} onChange={e=>setBloqueioForm({...bloqueioForm,data_bloqueio:e.target.value,data_fim:e.target.value>bloqueioForm.data_fim?e.target.value:bloqueioForm.data_fim})}/>
@@ -3054,18 +3113,23 @@ function exportReport(){
             </>}
 
               <h3>Bloqueios ativos dos mostradores</h3>
-              {!isMostrador&&<div className="info-box">Você está em modo consulta. Apenas mostradores podem bloquear ou remover horários.</div>}
+              {!isMostrador&&!isAdmin&&<div className="info-box">Você está em modo consulta. Apenas mostradores e administradores podem alterar bloqueios.</div>}
               <div className="bloqueio-lista">
                 {agendaBloqueios
                   .filter(b=>b.ativo!==false)
                   .sort((a,b)=>(String(a.data_bloqueio||"")+String(a.horario_inicio||"")).localeCompare(String(b.data_bloqueio||"")+String(b.horario_inicio||"")))
                   .map(b=>
                     <div key={b.id} className="bloqueio-card">
-                      <strong>{getUser(b.usuario_id)?.nome||"Mostrador"} • {String(b.data_bloqueio||"").split("-").reverse().join("/")} • {String(b.horario_inicio||"").slice(0,5)} às {String(b.horario_fim||"").slice(0,5)}</strong>
+                      <strong>{getUser(b.usuario_id)?.nome||"Mostrador"}{getUser(b.usuario_id)?.ativo===false?" (Inativo)":""} • {String(b.data_bloqueio||"").split("-").reverse().join("/")} • {String(b.horario_inicio||"").slice(0,5)} às {String(b.horario_fim||"").slice(0,5)}</strong>
                       <p><b>Motivo:</b> {b.justificativa}</p>
-                      {isMostrador&&b.usuario_id===user?.id&&
-                        <button className="btn ghost" onClick={()=>removerBloqueioAgenda(b.id)}>Remover bloqueio</button>
-                      }
+                      <div className="bloqueio-actions">
+                        {isAdmin&&
+                          <button className="btn ghost" onClick={()=>editarBloqueioAgenda(b)}>Editar bloqueio</button>
+                        }
+                        {(isAdmin||(isMostrador&&b.usuario_id===user?.id))&&
+                          <button className="btn ghost" onClick={()=>removerBloqueioAgenda(b.id)}>Remover bloqueio</button>
+                        }
+                      </div>
                     </div>
                   )
                 }
@@ -4074,7 +4138,7 @@ function ActionTable({acoes,visitas,getUser,reportStart,reportEnd}){
 }
 
 function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGestor,isMostrador,isFechamento,isContratos,canDeleteVisits,canStatusAvancouFechamento,canStatusPosOk,canStatusContrato,preUsers,mostradores,editing,acoes=[],fotos=[],getUser,onCaptureLocation,onUploadFiles,onCheckRevisit}){
-  const readOnly = Boolean(f.somenteLeitura);
+  const readOnly = Boolean(f.somenteLeitura) && !isAdmin;
   const limited=readOnly;
   const historico=(acoes||[]).filter(a=>a.visita_id===f.id);
   const visitFotos=(fotos||[]).filter(x=>x.visita_id===f.id);
@@ -4090,6 +4154,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
   }
 
   const statusOptions = STATUS.filter(([id])=>{
+    if(isAdmin) return true;
     if(f.tipo_agendamento===TIPO_FOTO_ANUNCIO){
       return ["agendada","confirmada","concluida","cancelada","remarcada"].includes(id);
     }
