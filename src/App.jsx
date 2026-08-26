@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.9-push-multiplos-dispositivos";
+const APP_VERSION = "Castan Realtime v3.5.11-whatsapp-proprietario";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -437,6 +437,38 @@ const whatsappClienteLink=v=>{
   return `https://wa.me/${p}?text=${encodeURIComponent(msg)}`;
 };
 
+const whatsappProprietarioLink=(v,tipo)=>{
+  let p=onlyDigits(v?.proprietario_contato);
+  if(!p)return "";
+  if(!p.startsWith("55"))p="55"+p;
+
+  const primeiroNome=String(v?.proprietario_nome||"").trim().split(/\s+/)[0]||"";
+  const saudacao=primeiroNome?`Olá, ${primeiroNome}!`:"Olá!";
+  const horario=String(v?.horario_visita||"").slice(0,5);
+  const endereco=String(v?.endereco_imovel||"").trim();
+
+  const linhas=tipo==="cancelada"
+    ? [
+        saudacao,
+        "",
+        `Informamos que a visita agendada para hoje, às ${horario}, ao seu imóvel${endereco?` localizado na ${endereco}`:""} foi cancelada pelo cliente.`,
+        "",
+        "Caso seja realizado um novo agendamento, entraremos em contato.",
+        "",
+        "Castan Imóveis"
+      ]
+    : [
+        saudacao,
+        "😊",
+        "",
+        `Informamos que a visita ao seu imóvel${endereco?` localizado na ${endereco}`:""} está confirmada para hoje, às ${horario}.`,
+        "",
+        "Castan Imóveis"
+      ];
+
+  return `https://wa.me/${p}?text=${encodeURIComponent(linhas.join("\n"))}`;
+};
+
 function exportCsv(filename, rows){
   const csv=rows.map(r=>r.map(c=>`"${String(c??"").replaceAll('"','""')}"`).join(";")).join("\n");
   const b=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
@@ -602,6 +634,47 @@ export default function App(){
   const adminUsers=usuarios.filter(u=>u.tipo==="admin"&&u.ativo!==false);
 
 
+  function enriquecerNotificacaoWhatsapp(item,visitRows=visitas){
+    if(!item)return item;
+
+    const texto=`${item.titulo||""} ${item.mensagem||""}`;
+    const lower=texto.toLowerCase();
+
+    let tipo="";
+    if(lower.includes("cliente cancelou") || lower.includes("visita cancelada"))tipo="cancelada";
+    else if(lower.includes("cliente confirmou") || lower.includes("visita confirmada"))tipo="confirmada";
+    if(!tipo)return item;
+
+    const codigoMatch=texto.match(/\b(?:LOC|Loc|loc)?\d{3,}\b/);
+    const horarioMatch=texto.match(/\b([01]\d|2[0-3]):[0-5]\d\b/);
+
+    let candidatos=[...(visitRows||[])];
+
+    if(codigoMatch){
+      const codigo=String(codigoMatch[0]).toLowerCase();
+      candidatos=candidatos.filter(v=>String(v.codigo_imovel||"").toLowerCase()===codigo);
+    }
+
+    if(horarioMatch){
+      const h=horarioMatch[0];
+      candidatos=candidatos.filter(v=>String(v.horario_visita||"").slice(0,5)===h);
+    }
+
+    const visita=candidatos
+      .sort((a,b)=>String(b.data_visita||"").localeCompare(String(a.data_visita||"")))[0];
+
+    if(!visita)return item;
+
+    const link=whatsappProprietarioLink(visita,tipo);
+    if(!link)return item;
+
+    return {
+      ...item,
+      whatsapp_proprietario_link:link,
+      whatsapp_proprietario_tipo:tipo
+    };
+  }
+
   const loadAllVisitas=useCallback(async()=>{
     const pageSize=1000;
     const allRows=[];
@@ -646,7 +719,7 @@ export default function App(){
       if(!fpd.error)setFichaProprietarioDocs(fpd.data||[]);
 
       if(!n.error){
-        const newNotifications=n.data||[];
+        const newNotifications=(n.data||[]).map(item=>enriquecerNotificacaoWhatsapp(item,v.data||[]));
         setNotificacoes(newNotifications);
 
         if(currentUserId && "Notification" in window && Notification.permission==="default"){
@@ -3293,6 +3366,11 @@ function Toast({notifications,onClose}){
         <button className="toast-close" onClick={onClose}>×</button>
         <strong>{n.titulo}</strong>
         <p>{n.mensagem}</p>
+        {n.whatsapp_proprietario_link&&
+          <a className="toast-whatsapp-owner" href={n.whatsapp_proprietario_link} target="_blank" rel="noreferrer">
+            WhatsApp proprietário
+          </a>
+        }
       </div>
     )}
   </div>;
@@ -3315,6 +3393,11 @@ function NotificationsPanel({notificacoes,onClose,onMarkRead}){
         <div className={`notification-item ${n.lida?"read":"unread"}`} key={n.id}>
           <strong>{n.titulo}</strong>
           <p>{n.mensagem}</p>
+          {n.whatsapp_proprietario_link&&
+            <a className="notification-whatsapp-owner" href={n.whatsapp_proprietario_link} target="_blank" rel="noreferrer">
+              WhatsApp proprietário
+            </a>
+          }
           <small>{brDateTime(n.created_at)}</small>
         </div>
       ):<Empty text="Nenhuma notificação."/>}
