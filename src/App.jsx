@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.11-whatsapp-proprietario";
+const APP_VERSION = "Castan Realtime v3.5.12-notificacoes-sem-repetir";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -591,7 +591,28 @@ export default function App(){
   const [toast,setToast]=useState([]);
   const [showNotifications,setShowNotifications]=useState(false);
   const [updateAvailable,setUpdateAvailable]=useState(false);
-  const seenNotificationsRef = useRef(new Set());
+  const seenNotificationsRef=useRef(new Set(
+    (()=>{try{return JSON.parse(localStorage.getItem("castan_seen_notification_ids")||"[]")}catch{return []}})()
+  ));
+
+  function registrarNotificacaoExibida(id){
+    if(!id)return;
+    seenNotificationsRef.current.add(id);
+
+    try{
+      const ids=[...seenNotificationsRef.current];
+      // Limita o histórico local para não crescer indefinidamente.
+      const recentes=ids.slice(-500);
+      seenNotificationsRef.current=new Set(recentes);
+      localStorage.setItem("castan_seen_notification_ids",JSON.stringify(recentes));
+    }catch{}
+  }
+
+  function limparHistoricoNotificacoesExibidas(){
+    seenNotificationsRef.current=new Set();
+    try{localStorage.removeItem("castan_seen_notification_ids")}catch{}
+  }
+
   const touchStart=useRef(0);
   const agendaConflictConfirmedRef=useRef(new Set());
   const realtimeRefreshTimerRef=useRef(null);
@@ -735,7 +756,7 @@ export default function App(){
           if(myUnread.length){
             setToast(myUnread);
             myUnread.forEach(item=>{
-              seenNotificationsRef.current.add(item.id);
+              registrarNotificacaoExibida(item.id);
               notificarDispositivo(item.titulo||"Castan Visitas", item.mensagem||"Nova notificação na agenda.", item.id);
             });
             setTimeout(()=>setToast([]),7000);
