@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.7-web-push";
-const VAPID_PUBLIC_KEY = "BDfEHsnduPNVCCFtIcS_x9gSGtubehMzpYw9TjUibM4Kmh3kv-BGFvqvckTnLi02IXczNz_HPyad7U0KrDDYv1M";
+const APP_VERSION = "Castan Realtime v3.5.8-vapid-hotfix";
+const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -1035,12 +1035,20 @@ export default function App(){
 
       let subscription=await reg.pushManager.getSubscription();
 
+      const chaveRegistrada=localStorage.getItem("castan_vapid_public_key")||"";
+      if(subscription && chaveRegistrada!==VAPID_PUBLIC_KEY){
+        try{ await subscription.unsubscribe(); }catch{}
+        subscription=null;
+      }
+
       if(!subscription){
         subscription=await reg.pushManager.subscribe({
           userVisibleOnly:true,
           applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
         });
       }
+
+      localStorage.setItem("castan_vapid_public_key",VAPID_PUBLIC_KEY);
 
       const json=subscription.toJSON();
       const endpoint=json.endpoint||subscription.endpoint;
@@ -1060,6 +1068,14 @@ export default function App(){
         },{onConflict:"endpoint"});
 
       if(error)throw error;
+
+      try{
+        await supabase
+          .from("push_subscriptions")
+          .update({ativo:false,updated_at:new Date().toISOString()})
+          .eq("usuario_id",user.id)
+          .neq("endpoint",endpoint);
+      }catch{}
 
       alert("Notificações em segundo plano ativadas neste aparelho.");
       return true;
