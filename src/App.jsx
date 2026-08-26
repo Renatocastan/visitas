@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.12-notificacoes-sem-repetir";
+const APP_VERSION = "Castan Realtime v3.5.13-whatsapp-proprietario-hotfix";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -666,23 +666,42 @@ export default function App(){
     else if(lower.includes("cliente confirmou") || lower.includes("visita confirmada"))tipo="confirmada";
     if(!tipo)return item;
 
-    const codigoMatch=texto.match(/\b(?:LOC|Loc|loc)?\d{3,}\b/);
     const horarioMatch=texto.match(/\b([01]\d|2[0-3]):[0-5]\d\b/);
+
+    // As notificações de confirmação/cancelamento começam com:
+    // "CODIGO - Cliente..."
+    // O código pode ser LOC1234, 1234, ABC, Qq etc.
+    const mensagemBase=String(item.mensagem||"").trim();
+    const codigoNotificacao=mensagemBase.includes(" - ")
+      ? mensagemBase.split(" - ")[0].trim()
+      : "";
 
     let candidatos=[...(visitRows||[])];
 
-    if(codigoMatch){
-      const codigo=String(codigoMatch[0]).toLowerCase();
-      candidatos=candidatos.filter(v=>String(v.codigo_imovel||"").toLowerCase()===codigo);
+    if(codigoNotificacao){
+      const codigo=codigoNotificacao.toLowerCase();
+      const porCodigo=candidatos.filter(
+        v=>String(v.codigo_imovel||"").trim().toLowerCase()===codigo
+      );
+      if(porCodigo.length)candidatos=porCodigo;
     }
 
     if(horarioMatch){
       const h=horarioMatch[0];
-      candidatos=candidatos.filter(v=>String(v.horario_visita||"").slice(0,5)===h);
+      const porHorario=candidatos.filter(
+        v=>String(v.horario_visita||"").slice(0,5)===h
+      );
+      if(porHorario.length)candidatos=porHorario;
     }
 
+    // Prioriza visitas mais recentes e com telefone de proprietário.
     const visita=candidatos
-      .sort((a,b)=>String(b.data_visita||"").localeCompare(String(a.data_visita||"")))[0];
+      .filter(v=>onlyDigits(v?.proprietario_contato))
+      .sort((a,b)=>{
+        const da=`${b.data_visita||""}T${String(b.horario_visita||"").slice(0,5)}`;
+        const db=`${a.data_visita||""}T${String(a.horario_visita||"").slice(0,5)}`;
+        return da.localeCompare(db);
+      })[0];
 
     if(!visita)return item;
 
