@@ -70591,3 +70591,9 @@
 
 /* v3.5.6 — complemento do imóvel */
 .form input::placeholder{color:#94a3b8;}
+
+
+/* v3.5.7 — botão de ativação Web Push */
+.header-actions button{
+  transition:transform .12s ease, opacity .12s ease;
+}

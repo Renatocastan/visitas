@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.6-complemento-imovel";
+const APP_VERSION = "Castan Realtime v3.5.7-web-push";
+const VAPID_PUBLIC_KEY = "BDfEHsnduPNVCCFtIcS_x9gSGtubehMzpYw9TjUibM4Kmh3kv-BGFvqvckTnLi02IXczNz_HPyad7U0KrDDYv1M";
 
 const VISITOWN_ID = "__visitown__";
 const TIPO_VISITA = "visita";
@@ -482,6 +483,14 @@ function emptyVisit(user, preUsers, mostradores){
   };
 }
 
+
+function urlBase64ToUint8Array(base64String){
+  const padding="=".repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
+  const raw=window.atob(base64);
+  return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+}
+
 export default function App(){
   const paramsPublicos = new URLSearchParams(window.location.search);
   const fichaPublicaToken = paramsPublicos.get("ficha");
@@ -590,6 +599,7 @@ export default function App(){
   const captadores=usuarios.filter(u=>u.tipo==="captador"&&u.ativo!==false);
   const fechamentoUsers=usuarios.filter(u=>u.tipo==="fechamento"&&u.ativo!==false);
   const contratosUsers=usuarios.filter(u=>u.tipo==="contratos"&&u.ativo!==false);
+  const adminUsers=usuarios.filter(u=>u.tipo==="admin"&&u.ativo!==false);
 
 
   const loadAllVisitas=useCallback(async()=>{
@@ -765,7 +775,7 @@ export default function App(){
         const msg=`${v.codigo_imovel} - a visita da Visitown das ${String(v.horario_visita||"").slice(0,5)} já passou. Atualize para Concluída, Cancelada ou Remarcada.`;
 
         await notifyMany(
-          [v.pre_atendimento_id],
+          [v.pre_atendimento_id,...adminUsers.map(u=>u.id)],
           "⚠️ Ação necessária — Visitown",
           msg
         );
@@ -933,17 +943,56 @@ export default function App(){
     return false;
   }
 
-  async function notifyMany(ids,titulo,mensagem){
+  async function notifyMany(ids,titulo,mensagem,opcoes={}){
     const unique=[...new Set((ids||[]).filter(Boolean))];
 
     const filtered = unique.filter(id=>{
       const u = usuarios.find(x=>x.id===id);
-      return u && u.tipo !== "admin" && u.ativo !== false && ((u.permissoes&&Object.prototype.hasOwnProperty.call(u.permissoes,"receber_notificacoes")) ? u.permissoes.receber_notificacoes : (DEFAULT_PERMISSOES[u.tipo]?.receber_notificacoes!==false));
+      if(!u || u.ativo===false)return false;
+
+      // ADM pode receber quando for explicitamente incluído na lista de destinatários.
+      if(u.tipo==="admin")return true;
+
+      return ((u.permissoes&&Object.prototype.hasOwnProperty.call(u.permissoes,"receber_notificacoes"))
+        ? u.permissoes.receber_notificacoes
+        : (DEFAULT_PERMISSOES[u.tipo]?.receber_notificacoes!==false));
     });
 
-    if(filtered.length){
-      await supabase.from("notificacoes").insert(filtered.map(usuario_id=>({usuario_id,titulo,mensagem,lida:false})));
+    if(!filtered.length)return [];
+
+    const {data,error}=await supabase
+      .from("notificacoes")
+      .insert(filtered.map(usuario_id=>({
+        usuario_id,
+        titulo,
+        mensagem,
+        lida:false
+      })))
+      .select("id,usuario_id");
+
+    if(error){
+      console.error("Erro ao criar notificações:",error);
+      return [];
     }
+
+    const idsNotificacoes=(data||[]).map(n=>n.id).filter(Boolean);
+
+    // Push é complementar. Se a Edge Function estiver indisponível,
+    // a notificação interna continua funcionando normalmente.
+    if(idsNotificacoes.length){
+      try{
+        await supabase.functions.invoke("send-push",{
+          body:{
+            notification_ids:idsNotificacoes,
+            url:opcoes.url||window.location.origin
+          }
+        });
+      }catch(err){
+        console.warn("Push indisponível:",err);
+      }
+    }
+
+    return data||[];
   }
 
   async function marcarNotificacoesComoLidas(){
@@ -961,8 +1010,13 @@ export default function App(){
   }
 
   async function garantirNotificacoes(){
-    if(!("Notification" in window)){
-      alert("Este navegador não suporta notificações.");
+    if(!user?.id){
+      alert("Entre no sistema antes de ativar notificações.");
+      return false;
+    }
+
+    if(!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)){
+      alert("Este navegador não suporta notificações push em segundo plano.");
       return false;
     }
 
@@ -971,16 +1025,49 @@ export default function App(){
     }
 
     if(Notification.permission!=="granted"){
-      alert("As notificações não foram permitidas neste aparelho.");
+      alert("As notificações não foram permitidas neste aparelho. Libere as notificações do Castan Visitas nas configurações do navegador/Windows.");
       return false;
     }
 
-    if("serviceWorker" in navigator){
-      try{ await navigator.serviceWorker.register("/sw.js"); }catch{}
-    }
+    try{
+      const reg=await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
 
-    alert("Notificações ativadas neste aparelho.");
-    return true;
+      let subscription=await reg.pushManager.getSubscription();
+
+      if(!subscription){
+        subscription=await reg.pushManager.subscribe({
+          userVisibleOnly:true,
+          applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      }
+
+      const json=subscription.toJSON();
+      const endpoint=json.endpoint||subscription.endpoint;
+      const p256dh=json.keys?.p256dh||"";
+      const auth=json.keys?.auth||"";
+
+      const {error}=await supabase
+        .from("push_subscriptions")
+        .upsert({
+          usuario_id:user.id,
+          endpoint,
+          p256dh,
+          auth,
+          user_agent:navigator.userAgent||null,
+          ativo:true,
+          updated_at:new Date().toISOString()
+        },{onConflict:"endpoint"});
+
+      if(error)throw error;
+
+      alert("Notificações em segundo plano ativadas neste aparelho.");
+      return true;
+    }catch(err){
+      console.error(err);
+      alert(`Não foi possível ativar o push neste aparelho: ${err?.message||err}`);
+      return false;
+    }
   }
 
   async function notificarDispositivo(titulo,mensagem,tag){
@@ -2589,7 +2676,7 @@ function exportReport(){
       <div className="header-actions">
         {user&&<div className="notif">{user.nome} — {ROLES[user.tipo]}</div>}
         <button onClick={loadAll} className="btn ghost"><RefreshCw size={16}/> Atualizar</button>
-        <button className="btn ghost" onClick={garantirNotificacoes}>Ativar notificações</button>
+        <button className="btn ghost" onClick={garantirNotificacoes}>Ativar notificações no computador</button>
         {user&&<button className="notif notif-button" onClick={()=>setShowNotifications(v=>!v)}><Bell size={16}/> {unread}</button>}
         {canCreateVisit&&<button className="btn primary" onClick={()=>startNewVisit()}><Plus size={16}/> Nova Visita</button>}
         {canCreateVisit&&<button className="btn foto-anuncio-btn" onClick={()=>startFotoAnuncio()}>📸 Fotos para anúncio</button>}
@@ -4133,6 +4220,19 @@ function ConfirmacaoVisitaPublica({token}){
     }else{
       setResultado(row?.resultado||"respondida");
     }
+
+    try{
+      await supabase.functions.invoke("send-push",{
+        body:{
+          confirmacao_token:token,
+          event:row?.resultado||acao,
+          url:window.location.origin
+        }
+      });
+    }catch(err){
+      console.warn("Push de confirmação/cancelamento indisponível:",err);
+    }
+
     await carregar();
   }
 
