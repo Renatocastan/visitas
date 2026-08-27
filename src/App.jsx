@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.14-admin-superusuario";
+const APP_VERSION = "Castan Realtime v3.5.15-complemento-persistencia";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -1449,6 +1449,39 @@ export default function App(){
     };
   }
 
+  async function garantirComplementoPersistido(visitaId, complementoEsperado){
+    if(!visitaId)return true;
+
+    const esperado=String(complementoEsperado||"").trim()||null;
+
+    const {data:checagem,error:erroChecagem}=await supabase
+      .from("visitas")
+      .select("id,complemento_imovel")
+      .eq("id",visitaId)
+      .single();
+
+    if(erroChecagem){
+      console.warn("Não foi possível validar complemento do imóvel:",erroChecagem);
+      return false;
+    }
+
+    const atual=String(checagem?.complemento_imovel||"").trim()||null;
+    if(atual===esperado)return true;
+
+    const {error:erroCorrecao}=await supabase
+      .from("visitas")
+      .update({complemento_imovel:esperado})
+      .eq("id",visitaId);
+
+    if(erroCorrecao){
+      console.error("Falha ao corrigir complemento do imóvel:",erroCorrecao);
+      alert("A visita foi salva, mas houve um problema ao gravar o complemento do imóvel. Tente editar a visita novamente.");
+      return false;
+    }
+
+    return true;
+  }
+
   async function saveVisit(){
     let f={...modalVisit};
 
@@ -1651,7 +1684,13 @@ export default function App(){
     const payload={
       codigo_imovel:isReservaAgenda?(f.codigo_imovel||"RESERVA"):f.codigo_imovel,
       endereco_imovel:isReservaAgenda?(f.endereco_imovel||"Reserva de agenda"):f.endereco_imovel,
-      complemento_imovel:isReservaAgenda?null:(f.complemento_imovel||null),
+      complemento_imovel:isReservaAgenda
+        ? null
+        : (
+            Object.prototype.hasOwnProperty.call(f,"complemento_imovel")
+              ? (String(f.complemento_imovel||"").trim()||null)
+              : (old?.complemento_imovel||null)
+          ),
       proprietario_nome:isReservaAgenda?(f.proprietario_nome||"Reserva"):f.proprietario_nome,
       proprietario_contato:isReservaAgenda?(f.proprietario_contato||"Reserva"):f.proprietario_contato,
       cliente_nome:isReservaAgenda?(f.cliente_nome||"Reserva de agenda"):(isFotoAnuncioAgendamento?"Fotos para anúncio":f.cliente_nome),
@@ -1685,6 +1724,8 @@ export default function App(){
     if(f.id){
       const {error}=await supabase.from("visitas").update(payload).eq("id",f.id);
       if(error)return alert(error.message);
+
+      await garantirComplementoPersistido(f.id,payload.complemento_imovel);
 
       if(old?.status!==payload.status){
         await supabase.from("acoes_visita").insert({
@@ -1798,6 +1839,8 @@ export default function App(){
     } else {
       const {data,error}=await supabase.from("visitas").insert(payload).select("*").single();
       if(error)return alert(error.message);
+
+      await garantirComplementoPersistido(data.id,payload.complemento_imovel);
 
       await supabase.from("acoes_visita").insert({
           created_at:nowISO(),
@@ -4191,7 +4234,14 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
           onBlur={valorAtual=>onCheckRevisit?.({...f,codigo_imovel:valorAtual,revisita_alertado_chave:""})}
         />
         <Field label="Endereço do imóvel *" value={f.endereco_imovel} disabled={limited} onChange={v=>setF({...f,endereco_imovel:v})}/>
-        <Field label="Complemento do imóvel" value={f.complemento_imovel||""} disabled={limited} onChange={v=>setF({...f,complemento_imovel:v})} placeholder="Ex.: Apto 84, Bloco B"/>
+        <Field
+          label="Complemento do imóvel"
+          value={f.complemento_imovel||""}
+          disabled={limited}
+          onChange={v=>setF({...f,complemento_imovel:v})}
+          onBlur={v=>setF(prev=>prev?{...prev,complemento_imovel:String(v||"").trim()}:prev)}
+          placeholder="Ex.: Apto 84, Bloco B"
+        />
         <Field label="Nome do proprietário *" value={f.proprietario_nome} disabled={limited} onChange={v=>setF({...f,proprietario_nome:v})}/>
         <Field label="Contato do proprietário *" value={f.proprietario_contato} disabled={limited} onChange={v=>setF({...f,proprietario_contato:v})}/>
         {f.tipo_agendamento!==TIPO_FOTO_ANUNCIO&&<>
