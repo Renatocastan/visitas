@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.22-gestor-virou-contrato";
+const APP_VERSION = "Castan Realtime v3.5.23-salvar-virou-contrato";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -4588,7 +4588,7 @@ function ActionTable({acoes,visitas,getUser,reportStart,reportEnd}){
 }
 
 function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGestor,isMostrador,isFechamento,isContratos,canDeleteVisits,canStatusAvancouFechamento,canStatusPosOk,canStatusContrato,preUsers,mostradores,editing,acoes=[],fotos=[],getUser,onCaptureLocation,onUploadFiles,onCheckRevisit}){
-  const readOnly = Boolean(f.somenteLeitura) && !isAdmin;
+  const readOnly = Boolean(f.somenteLeitura) && !isAdmin && !isGestor && !isContratos;
   const limited=readOnly;
   const historico=(acoes||[]).filter(a=>a.visita_id===f.id);
   const visitFotos=(fotos||[]).filter(x=>x.visita_id===f.id);
