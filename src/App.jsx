@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.19-hotfix-relatorio-detalhe";
+const APP_VERSION = "Castan Realtime v3.5.20-bloqueio-geral-agenda";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -547,6 +547,7 @@ export default function App(){
   const [agendaBloqueios,setAgendaBloqueios]=useState([]);
   const [bloqueioForm,setBloqueioForm]=useState({
     usuario_id:"",
+    geral:false,
     data_bloqueio:todayISO(),
     data_fim:todayISO(),
     horario_inicio:"09:00",
@@ -1259,7 +1260,7 @@ export default function App(){
   function agendaBloqueadaPara(mostradorId,dataVisita,horarioInicio,horarioFim=null){
     return agendaBloqueios.find(b=>
       b.ativo!==false &&
-      b.usuario_id===mostradorId &&
+      (b.usuario_id===mostradorId || !b.usuario_id) &&
       b.data_bloqueio===dataVisita &&
       horariosSobrepostos(horarioInicio, horarioFim||horarioInicio, b.horario_inicio, b.horario_fim)
     );
@@ -1279,8 +1280,18 @@ export default function App(){
   async function salvarBloqueioAgenda(){
     if(!isMostrador&&!isAdmin&&!isGestor)return alert("Seu perfil não pode criar bloqueios de agenda.");
 
-    const usuarioBloqueio=(isAdmin||isGestor) ? bloqueioForm.usuario_id : user?.id;
-    if(!usuarioBloqueio)return alert("Selecione o mostrador da agenda que será bloqueada.");
+    const bloqueioGeral=Boolean(bloqueioForm.geral);
+    if(bloqueioGeral && !isAdmin && !isGestor){
+      return alert("Somente administrador ou gestor pode criar bloqueio geral da agenda.");
+    }
+
+    const usuarioBloqueio=bloqueioGeral
+      ? null
+      : ((isAdmin||isGestor) ? bloqueioForm.usuario_id : user?.id);
+
+    if(!bloqueioGeral && !usuarioBloqueio){
+      return alert("Selecione o mostrador da agenda que será bloqueada.");
+    }
 
     if(!bloqueioForm.data_bloqueio || !bloqueioForm.data_fim || !bloqueioForm.horario_inicio || !bloqueioForm.horario_fim){
       return alert("Informe período inicial/final e horário inicial/final do bloqueio.");
@@ -1314,6 +1325,7 @@ export default function App(){
 
     setBloqueioForm({
       usuario_id:"",
+      geral:false,
       data_bloqueio:todayISO(),
       data_fim:todayISO(),
       horario_inicio:"09:00",
@@ -3287,6 +3299,26 @@ function exportReport(){
               {(isMostrador||isAdmin||isGestor)&&<>
               <div className="bloqueio-form">
                 {(isAdmin||isGestor)&&
+                  <label className="full bloqueio-geral-toggle">
+                    <span>Tipo de bloqueio</span>
+                    <label className="checkbox-line">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(bloqueioForm.geral)}
+                        onChange={e=>setBloqueioForm({
+                          ...bloqueioForm,
+                          geral:e.target.checked,
+                          usuario_id:e.target.checked?"":bloqueioForm.usuario_id,
+                          horario_inicio:e.target.checked?"00:00":bloqueioForm.horario_inicio,
+                          horario_fim:e.target.checked?"23:59":bloqueioForm.horario_fim
+                        })}
+                      />
+                      <span>Bloquear agenda inteira</span>
+                    </label>
+                  </label>
+                }
+
+                {(isAdmin||isGestor)&&!bloqueioForm.geral&&
                   <label className="full">
                     <span>Mostrador *</span>
                     <select value={bloqueioForm.usuario_id} onChange={e=>setBloqueioForm({...bloqueioForm,usuario_id:e.target.value})}>
@@ -3339,8 +3371,11 @@ function exportReport(){
                   .filter(b=>b.ativo!==false)
                   .sort((a,b)=>(String(a.data_bloqueio||"")+String(a.horario_inicio||"")).localeCompare(String(b.data_bloqueio||"")+String(b.horario_inicio||"")))
                   .map(b=>
-                    <div key={b.id} className="bloqueio-card">
-                      <strong>{getUser(b.usuario_id)?.nome||"Mostrador"}{getUser(b.usuario_id)?.ativo===false?" (Inativo)":""} • {String(b.data_bloqueio||"").split("-").reverse().join("/")} • {String(b.horario_inicio||"").slice(0,5)} às {String(b.horario_fim||"").slice(0,5)}</strong>
+                    <div key={b.id} className={`bloqueio-card ${!b.usuario_id?"bloqueio-geral-card":""}`}>
+                      <strong>{b.usuario_id
+                        ? `${getUser(b.usuario_id)?.nome||"Mostrador"}${getUser(b.usuario_id)?.ativo===false?" (Inativo)":""}`
+                        : "AGENDA INTEIRA"
+                      } • {String(b.data_bloqueio||"").split("-").reverse().join("/")} • {String(b.horario_inicio||"").slice(0,5)} às {String(b.horario_fim||"").slice(0,5)}</strong>
                       <p><b>Motivo:</b> {b.justificativa}</p>
                       <div className="bloqueio-actions">
                         {(isAdmin||isGestor)&&

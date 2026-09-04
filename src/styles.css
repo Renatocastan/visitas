@@ -70715,3 +70715,30 @@
   min-height:0;
   overflow:auto;
 }
+
+
+/* v3.5.20 — bloqueio geral da agenda */
+.bloqueio-geral-toggle{
+  padding:10px 12px;
+  border:1px solid #dbe4ee;
+  border-radius:10px;
+  background:#f8fafc;
+}
+
+.checkbox-line{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:6px;
+  font-weight:800;
+}
+
+.checkbox-line input{
+  width:18px;
+  height:18px;
+}
+
+.bloqueio-geral-card{
+  border-left:5px solid #b91c1c;
+  background:#fff7f7;
+}
