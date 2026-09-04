@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.21-bloqueio-geral-intercepta-clique";
+const APP_VERSION = "Castan Realtime v3.5.22-gestor-virou-contrato";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -4757,8 +4757,21 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
 
         
         {f.tipo_agendamento!==TIPO_FOTO_ANUNCIO&&<>
-          {(isFechamento||isContratos)&&<Field label="Valor da proposta *" type="number" value={f.valor_proposta||""} onChange={v=>setF({...f,valor_proposta:v})}/>}
-          {isContratos&&<label className="check"><input type="checkbox" checked={!!f.contrato_fechado} onChange={e=>setF({...f,contrato_fechado:e.target.checked,status:e.target.checked?"contrato":f.status})}/> Virou contrato</label>}
+          {(isFechamento||isContratos||isGestor)&&<Field label="Valor da proposta *" type="number" value={f.valor_proposta||""} onChange={v=>setF({...f,valor_proposta:v})}/>}
+          {(isContratos||isGestor)&&
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!f.contrato_fechado}
+                onChange={e=>setF({
+                  ...f,
+                  contrato_fechado:e.target.checked,
+                  status:e.target.checked?"contrato":(f.status==="contrato"?"avancou_fechamento":f.status)
+                })}
+              />
+              Virou contrato
+            </label>
+          }
         </>}
 
         <label className="full">
