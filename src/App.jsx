@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.16-gestor-relatorio-fechamento";
+const APP_VERSION = "Castan Realtime v3.5.17-gestor-contratos";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -637,14 +637,15 @@ export default function App(){
     return fallback;
   }
 
-  const canSeeAllVisits = hasPerm("ver_todas_visitas", isAdmin||isGestor||isPre||isCaptador||isFechamento);
+  const canSeeAllVisits = isGestor || hasPerm("ver_todas_visitas", isAdmin||isGestor||isPre||isCaptador||isFechamento);
   const canCreateVisit = hasPerm("criar_visita", isAdmin||isGestor||isPre);
   const canManageUsers = isAdmin || hasPerm("gerenciar_usuarios", false);
   const canDeleteVisits = isAdmin || isGestor || hasPerm("excluir_visita", false);
   const canViewReports = hasPerm("ver_relatorios", isAdmin||isGestor||isPre||isFechamento||isContratos);
   const canStatusAvancouFechamento = isAdmin || hasPerm("status_avancou_fechamento", isFechamento);
   const canStatusPosOk = isAdmin || hasPerm("status_pos_ok", isFechamento);
-  const canStatusContrato = isAdmin || hasPerm("status_contrato", isContratos);
+  const canStatusContrato = isAdmin || isGestor || hasPerm("status_contrato", isContratos);
+  const canOperateContratos = isAdmin || isGestor || isContratos;
 
   const isContratoVisibleVisit = v => Boolean(v?.checklist) || ["avancou_fechamento","pos_ok","contrato"].includes(v?.status);
 
