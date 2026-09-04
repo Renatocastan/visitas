@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.20-bloqueio-geral-agenda";
+const APP_VERSION = "Castan Realtime v3.5.21-bloqueio-geral-intercepta-clique";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -1264,6 +1264,38 @@ export default function App(){
       b.data_bloqueio===dataVisita &&
       horariosSobrepostos(horarioInicio, horarioFim||horarioInicio, b.horario_inicio, b.horario_fim)
     );
+  }
+
+  function bloqueioGeralNaAgenda(dataVisita,horarioInicio="09:00",horarioFim=null){
+    return agendaBloqueios.find(b=>
+      b.ativo!==false &&
+      !b.usuario_id &&
+      b.data_bloqueio===dataVisita &&
+      horariosSobrepostos(
+        String(horarioInicio||"09:00").slice(0,5),
+        String(horarioFim||horarioInicio||"09:30").slice(0,5),
+        b.horario_inicio,
+        b.horario_fim
+      )
+    );
+  }
+
+  function impedirAberturaPorBloqueioGeral(dataVisita,horarioInicio,horarioFim){
+    const bloqueio=bloqueioGeralNaAgenda(dataVisita,horarioInicio,horarioFim);
+    if(!bloqueio)return false;
+
+    const dataBR=String(dataVisita||"").split("-").reverse().join("/");
+    const inicio=String(bloqueio.horario_inicio||"").slice(0,5);
+    const fim=String(bloqueio.horario_fim||"").slice(0,5);
+    const motivo=String(bloqueio.justificativa||"Agenda indisponível").trim();
+
+    alert(
+      `Agenda bloqueada em ${dataBR}.\n\n`+
+      `Horário: ${inicio} às ${fim}\n`+
+      `Motivo: ${motivo}\n\n`+
+      `Não é possível criar agendamentos neste período.`
+    );
+    return true;
   }
 
   function datasEntre(inicio,fim){
@@ -2949,13 +2981,16 @@ function exportReport(){
   function startNewVisit(day=null, horario=null){
     if(!canCreateVisit)return alert("Seu perfil não pode criar visitas.");
 
+    const dataSelecionada=day||todayISO();
     const horaInicial = horario ? String(horario).slice(0,5) : "09:00";
     const idx = HORARIOS_VISITA.indexOf(horaInicial);
     const horaFinal = idx >= 0 && idx < HORARIOS_VISITA.length-1 ? HORARIOS_VISITA[idx+3] || HORARIOS_VISITA[idx+1] : "10:00";
 
+    if(impedirAberturaPorBloqueioGeral(dataSelecionada,horaInicial,horaFinal))return;
+
     setModalVisit({
       ...emptyVisit(user,preUsers,mostradores),
-      data_visita:day||todayISO(),
+      data_visita:dataSelecionada,
       horario_visita:horaInicial,
       horario_fim_visita:horaFinal
     });
@@ -2964,9 +2999,12 @@ function exportReport(){
   function startFotoAnuncio(day=null, horario=null){
     if(!canCreateVisit)return alert("Seu perfil não pode criar agendamentos.");
 
+    const dataSelecionada=day||todayISO();
     const horaInicial = horario ? String(horario).slice(0,5) : "09:00";
     const idx = HORARIOS_VISITA.indexOf(horaInicial);
     const horaFinal = idx >= 0 && idx < HORARIOS_VISITA.length-1 ? HORARIOS_VISITA[idx+3] || HORARIOS_VISITA[idx+1] : "10:00";
+
+    if(impedirAberturaPorBloqueioGeral(dataSelecionada,horaInicial,horaFinal))return;
 
     setModalVisit({
       ...emptyVisit(user,preUsers,mostradores),
@@ -2974,7 +3012,7 @@ function exportReport(){
       cliente_nome:"Fotos para anúncio",
       cliente_contato:"N/A",
       atualizar_fotos:false,
-      data_visita:day||todayISO(),
+      data_visita:dataSelecionada,
       horario_visita:horaInicial,
       horario_fim_visita:horaFinal
     });
