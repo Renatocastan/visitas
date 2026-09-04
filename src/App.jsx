@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.23-salvar-virou-contrato";
+const APP_VERSION = "Castan Realtime v3.5.24-atalho-busca-imovel";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -2196,6 +2196,43 @@ async function deleteVisit(id){
     });
   },[visitas,filterPre,filterMostrador,filterStatus,searchTerm,usuarios,isContratos,user?.id,canSeeAllVisits]);
 
+  const codigoBuscaExata=String(searchTerm||"").trim().toLowerCase();
+
+  const visitasAtalhoCodigo=useMemo(()=>{
+    if(!codigoBuscaExata)return [];
+
+    return visitas
+      .filter(v=>{
+        if(String(v.codigo_imovel||"").trim().toLowerCase()!==codigoBuscaExata)return false;
+        if(!canSeeAllVisits && !(v.created_by===user?.id || v.pre_atendimento_id===user?.id || v.mostrador_id===user?.id)) return false;
+        if(isContratos && !isContratoVisibleVisit(v)) return false;
+        return true;
+      })
+      .sort((a,b)=>{
+        const da=`${a.data_visita||""}T${String(a.horario_visita||"").slice(0,5)}`;
+        const db=`${b.data_visita||""}T${String(b.horario_visita||"").slice(0,5)}`;
+        return db.localeCompare(da);
+      });
+  },[visitas,codigoBuscaExata,canSeeAllVisits,user?.id,isContratos]);
+
+  function abrirVisitaPeloCodigo(v){
+    if(!v)return;
+
+    // Posiciona o calendário na data encontrada para dar contexto,
+    // mas abre a visita imediatamente, sem exigir navegação manual.
+    if(v.data_visita){
+      const d=new Date(`${v.data_visita}T00:00:00`);
+      if(!Number.isNaN(d.getTime())){
+        setMonth(d.getMonth());
+        setYear(d.getFullYear());
+        setWeekStart(getStartOfWeek(d));
+        setCurrentDay(v.data_visita);
+      }
+    }
+
+    openVisit(v);
+  }
+
   const todayVisits=visibleVisits
     .filter(v=>v.data_visita===todayISO()&&!["cancelada","reserva_cancelada"].includes(v.status))
     .sort((a,b)=>String(a.horario_visita).localeCompare(String(b.horario_visita)));
@@ -3278,6 +3315,52 @@ function exportReport(){
 
           {view==="calendario"&&<>
             <Filters preUsers={preUsers} mostradores={mostradoresComVisitown} filterPre={filterPre} setFilterPre={setFilterPre} filterMostrador={filterMostrador} setFilterMostrador={setFilterMostrador} filterStatus={filterStatus} setFilterStatus={setFilterStatus} searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
+
+            {codigoBuscaExata&&visitasAtalhoCodigo.length>0&&
+              <div className="calendar-code-shortcut">
+                <div className="calendar-code-shortcut-head">
+                  <div>
+                    <strong>Atalho do imóvel: {String(searchTerm||"").trim()}</strong>
+                    <span>{visitasAtalhoCodigo.length} visita(s) encontrada(s). Clique para abrir diretamente.</span>
+                  </div>
+                  <button type="button" className="btn ghost" onClick={()=>setSearchTerm("")}>Limpar busca</button>
+                </div>
+
+                <div className="calendar-code-shortcut-list">
+                  {visitasAtalhoCodigo.slice(0,12).map(v=>
+                    <button
+                      type="button"
+                      key={v.id}
+                      className="calendar-code-shortcut-item"
+                      onClick={()=>abrirVisitaPeloCodigo(v)}
+                    >
+                      <div>
+                        <strong>
+                          {v.data_visita?String(v.data_visita).split("-").reverse().join("/"):"-"}
+                          {" • "}
+                          {String(v.horario_visita||"").slice(0,5)}
+                          {" • "}
+                          {v.codigo_imovel}
+                        </strong>
+                        <span>{v.cliente_nome||"Sem cliente"} — {v.endereco_imovel||"Sem endereço"}</span>
+                      </div>
+                      <span className={statusClass(v.status)}>{statusLabel(v.status)}</span>
+                    </button>
+                  )}
+                </div>
+
+                {visitasAtalhoCodigo.length>12&&
+                  <small>Mostrando as 12 visitas mais recentes deste imóvel.</small>
+                }
+              </div>
+            }
+
+            {codigoBuscaExata&&visitasAtalhoCodigo.length===0&&
+              <div className="calendar-code-shortcut calendar-code-shortcut-empty">
+                Nenhuma visita encontrada com o código exato <strong>{String(searchTerm||"").trim()}</strong>.
+              </div>
+            }
+
             <Card>
               <div className="monthbar">
                 <button onClick={()=>{
