@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.18-relatorio-fechamento-detalhado";
+const APP_VERSION = "Castan Realtime v3.5.19-hotfix-relatorio-detalhe";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -2506,11 +2506,24 @@ async function deleteVisit(id){
       checklist_respondidos:"Checklists respondidos"
     };
 
+    const detalheRows=visitasDetalheFechamento(row,metrica).map(v=>({
+      id:v.id,
+      codigo_imovel:v.codigo_imovel||"",
+      cliente_nome:v.cliente_nome||"",
+      data:v.data_visita?String(v.data_visita).split("-").reverse().join("/"):"",
+      horario:String(v.horario_visita||"").slice(0,5),
+      status:statusLabel(v.status),
+      checklist_enviado:v.checklist?"Sim":"Não",
+      checklist_respondido:v.checklist_ok?"Sim":"Não",
+      pre_nome:getUser(v.pre_atendimento_id)?.nome||"",
+      mostrador_nome:isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"")
+    }));
+
     setFechamentoDetalhe({
       titulo:`${row.nome} — ${labels[metrica]||"Detalhamento"}`,
       usuario:row.nome,
       metrica,
-      rows:visitasDetalheFechamento(row,metrica)
+      rows:detalheRows
     });
   }
 
@@ -3688,7 +3701,6 @@ function exportReport(){
       <FechamentoDetalheModal
         detalhe={fechamentoDetalhe}
         onClose={()=>setFechamentoDetalhe(null)}
-        getUser={getUser}
       />
     }
   </div>;
@@ -4364,42 +4376,55 @@ function FechamentoProdutividadeTable({rows,onOpen}){
   </div>;
 }
 
-function FechamentoDetalheModal({detalhe,onClose,getUser}){
-  const rows=detalhe?.rows||[];
+function FechamentoDetalheModal({detalhe,onClose}){
+  const rows=Array.isArray(detalhe?.rows)?detalhe.rows:[];
+
+  function csvEscape(v){
+    const s=String(v??"");
+    return `"${s.replace(/"/g,'""')}"`;
+  }
 
   function exportar(){
-    const csv=[
+    const linhas=[
       ["Usuário Fechamento",detalhe?.usuario||""],
       ["Filtro",detalhe?.titulo||""],
       [],
-      ["Código imóvel","Cliente","Data","Horário","Status","Checklist enviado","Checklist respondido","Pré-atendimento","Mostrador"]
+      ["Código imóvel","Cliente","Data","Horário","Status","Checklist enviado","Checklist respondido","Pré-atendimento","Mostrador"],
+      ...rows.map(r=>[
+        r.codigo_imovel||"",
+        r.cliente_nome||"",
+        r.data||"",
+        r.horario||"",
+        r.status||"",
+        r.checklist_enviado||"",
+        r.checklist_respondido||"",
+        r.pre_nome||"",
+        r.mostrador_nome||""
+      ])
     ];
 
-    rows.forEach(v=>csv.push([
-      v.codigo_imovel||"",
-      v.cliente_nome||"",
-      v.data_visita||"",
-      String(v.horario_visita||"").slice(0,5),
-      statusLabel(v.status),
-      v.checklist?"Sim":"Não",
-      v.checklist_ok?"Sim":"Não",
-      getUser(v.pre_atendimento_id)?.nome||"",
-      isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"")
-    ]));
-
-    exportCsv(`detalhamento-fechamento-${Date.now()}.csv`,csv);
+    const csv=linhas.map(l=>l.map(csvEscape).join(";")).join("\n");
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`detalhamento-fechamento-${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 
   return <div className="overlay">
     <div className="modal fechamento-detail-modal">
       <div className="modalhead">
         <h2>{detalhe?.titulo||"Detalhamento do fechamento"}</h2>
-        <button onClick={onClose}><X/></button>
+        <button type="button" onClick={onClose}>×</button>
       </div>
 
       <div className="report-detail-modal-actions">
         <strong>{rows.length} registro(s)</strong>
-        <button className="btn ghost" onClick={exportar} disabled={!rows.length}>
+        <button type="button" className="btn ghost" onClick={exportar} disabled={!rows.length}>
           Exportar estes registros
         </button>
       </div>
@@ -4420,32 +4445,31 @@ function FechamentoDetalheModal({detalhe,onClose,getUser}){
             </tr>
           </thead>
           <tbody>
-            {rows.map(v=>
-              <tr key={v.id}>
-                <td>{v.codigo_imovel||"-"}</td>
-                <td>{v.cliente_nome||"-"}</td>
-                <td>{v.data_visita?String(v.data_visita).split("-").reverse().join("/"):"-"}</td>
-                <td>{String(v.horario_visita||"").slice(0,5)||"-"}</td>
-                <td>{statusLabel(v.status)}</td>
-                <td>{v.checklist?"Sim":"Não"}</td>
-                <td>{v.checklist_ok?"Sim":"Não"}</td>
-                <td>{getUser(v.pre_atendimento_id)?.nome||"-"}</td>
-                <td>{isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-")}</td>
+            {rows.map((r,i)=>
+              <tr key={r.id||i}>
+                <td>{r.codigo_imovel||"-"}</td>
+                <td>{r.cliente_nome||"-"}</td>
+                <td>{r.data||"-"}</td>
+                <td>{r.horario||"-"}</td>
+                <td>{r.status||"-"}</td>
+                <td>{r.checklist_enviado||"Não"}</td>
+                <td>{r.checklist_respondido||"Não"}</td>
+                <td>{r.pre_nome||"-"}</td>
+                <td>{r.mostrador_nome||"-"}</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {!rows.length&&<Empty text="Nenhum registro encontrado para este indicador."/>}
+      {!rows.length&&<div className="empty">Nenhum registro encontrado para este indicador.</div>}
 
       <div className="modalactions">
-        <button className="btn primary" onClick={onClose}>Fechar</button>
+        <button type="button" className="btn primary" onClick={onClose}>Fechar</button>
       </div>
     </div>
   </div>;
 }
-
 
 function FunnelReport({rows}){
   const max=Math.max(1,...rows.map(r=>Number(r.total||0)));

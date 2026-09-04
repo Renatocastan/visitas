@@ -70701,3 +70701,17 @@
   max-height:60vh;
   overflow:auto;
 }
+
+
+/* v3.5.19 — hotfix modal relatório */
+.fechamento-detail-modal{
+  max-height:90vh;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+.fechamento-detail-modal .tablewrap{
+  flex:1;
+  min-height:0;
+  overflow:auto;
+}
