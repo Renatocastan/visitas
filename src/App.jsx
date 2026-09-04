@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.17-gestor-contratos";
+const APP_VERSION = "Castan Realtime v3.5.18-relatorio-fechamento-detalhado";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -561,6 +561,7 @@ export default function App(){
   const [reportDate,setReportDate]=useState(todayISO());
   const [reportStart,setReportStart]=useState(todayISO());
   const [reportEnd,setReportEnd]=useState(todayISO());
+  const [fechamentoDetalhe,setFechamentoDetalhe]=useState(null);
 
   const [dashboardPeriod,setDashboardPeriod]=useState("month");
   const [dashboardStart,setDashboardStart]=useState(todayISO());
@@ -2436,6 +2437,7 @@ async function deleteVisit(id){
     return {
       id:u.id,
       nome:u.nome,
+      visitas:arr,
       visitas_total:arr.length,
       visitas_concluidas:arr.filter(v=>
         ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
@@ -2450,7 +2452,9 @@ async function deleteVisit(id){
   );
 
   const produtividadeFechamentoTotal={
+    id:"__total__",
     nome:"TOTAL DO PERÍODO",
+    visitas:visitasComerciaisPeriodo,
     visitas_total:visitasComerciaisPeriodo.length,
     visitas_concluidas:visitasComerciaisPeriodo.filter(v=>
       ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
@@ -2460,7 +2464,9 @@ async function deleteVisit(id){
   };
 
   const produtividadeFechamentoSemIdentificacao={
+    id:"__sem_usuario__",
     nome:"Sem usuário de fechamento identificado",
+    visitas:produtividadeFechamentoSemUsuario,
     visitas_total:produtividadeFechamentoSemUsuario.length,
     visitas_concluidas:produtividadeFechamentoSemUsuario.filter(v=>
       ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
@@ -2476,6 +2482,66 @@ async function deleteVisit(id){
       : []),
     produtividadeFechamentoTotal
   ];
+
+  function visitasDetalheFechamento(row,metrica){
+    const arr=row?.visitas||[];
+
+    if(metrica==="visitas_concluidas"){
+      return arr.filter(v=>["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status));
+    }
+    if(metrica==="checklist_enviados"){
+      return arr.filter(v=>Boolean(v.checklist));
+    }
+    if(metrica==="checklist_respondidos"){
+      return arr.filter(v=>Boolean(v.checklist_ok));
+    }
+    return arr;
+  }
+
+  function abrirDetalheFechamento(row,metrica){
+    const labels={
+      visitas_total:"Visitas totais",
+      visitas_concluidas:"Visitas concluídas",
+      checklist_enviados:"Checklists enviados",
+      checklist_respondidos:"Checklists respondidos"
+    };
+
+    setFechamentoDetalhe({
+      titulo:`${row.nome} — ${labels[metrica]||"Detalhamento"}`,
+      usuario:row.nome,
+      metrica,
+      rows:visitasDetalheFechamento(row,metrica)
+    });
+  }
+
+  function exportarDetalhamentoFechamento(){
+    const rows=[
+      ["Período",reportStart,reportEnd],
+      [],
+      ["Usuário Fechamento","Código imóvel","Cliente","Data","Horário","Status","Checklist enviado","Checklist respondido","Pré-atendimento","Mostrador"]
+    ];
+
+    produtividadeFechamentoTabela
+      .filter(r=>r.id!=="__total__")
+      .forEach(r=>{
+        (r.visitas||[]).forEach(v=>{
+          rows.push([
+            r.nome,
+            v.codigo_imovel||"",
+            v.cliente_nome||"",
+            v.data_visita||"",
+            String(v.horario_visita||"").slice(0,5),
+            statusLabel(v.status),
+            v.checklist?"Sim":"Não",
+            v.checklist_ok?"Sim":"Não",
+            getUser(v.pre_atendimento_id)?.nome||"",
+            isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"")
+          ]);
+        });
+      });
+
+    exportCsv(`produtividade-fechamento-${reportStart}-a-${reportEnd}.csv`,rows);
+  }
 
 
   const dashboardVisits=visitas.filter(v=>{
@@ -3473,7 +3539,15 @@ function exportReport(){
                   Período: {String(reportStart||"").split("-").reverse().join("/")} a {String(reportEnd||"").split("-").reverse().join("/")}.
                   A atribuição por usuário considera a última ação registrada pela equipe de Fechamento em cada visita.
                 </p>
-                <FechamentoProdutividadeTable rows={produtividadeFechamentoTabela}/>
+                <div className="report-detail-actions">
+                  <button className="btn ghost" onClick={exportarDetalhamentoFechamento}>
+                    Exportar detalhamento Excel/CSV
+                  </button>
+                </div>
+                <FechamentoProdutividadeTable
+                  rows={produtividadeFechamentoTabela}
+                  onOpen={abrirDetalheFechamento}
+                />
               </section>
 
               <section className="report-section">
@@ -3609,6 +3683,14 @@ function exportReport(){
     }
 
     {modalUser&&<UserModal u={modalUser} setU={setModalUser} onClose={()=>setModalUser(null)} onSave={saveUser}/>}
+
+    {fechamentoDetalhe&&
+      <FechamentoDetalheModal
+        detalhe={fechamentoDetalhe}
+        onClose={()=>setFechamentoDetalhe(null)}
+        getUser={getUser}
+      />
+    }
   </div>;
 }
 
@@ -4244,7 +4326,18 @@ function FechamentoTable({rows}){
   </div>;
 }
 
-function FechamentoProdutividadeTable({rows}){
+function FechamentoProdutividadeTable({rows,onOpen}){
+  const MetricButton=({row,metric,value})=>
+    <button
+      type="button"
+      className="report-metric-link"
+      disabled={!value}
+      onClick={()=>value&&onOpen?.(row,metric)}
+      title={value?"Clique para ver os registros envolvidos":"Nenhum registro"}
+    >
+      {value}
+    </button>;
+
   return <div className="tablewrap">
     <table>
       <thead>
@@ -4260,14 +4353,96 @@ function FechamentoProdutividadeTable({rows}){
         {rows.map((r,i)=>
           <tr key={`${r.nome}-${i}`} className={r.nome==="TOTAL DO PERÍODO"?"report-total-row":""}>
             <td>{r.nome}</td>
-            <td>{r.visitas_total}</td>
-            <td>{r.visitas_concluidas}</td>
-            <td>{r.checklist_enviados}</td>
-            <td>{r.checklist_respondidos}</td>
+            <td><MetricButton row={r} metric="visitas_total" value={r.visitas_total}/></td>
+            <td><MetricButton row={r} metric="visitas_concluidas" value={r.visitas_concluidas}/></td>
+            <td><MetricButton row={r} metric="checklist_enviados" value={r.checklist_enviados}/></td>
+            <td><MetricButton row={r} metric="checklist_respondidos" value={r.checklist_respondidos}/></td>
           </tr>
         )}
       </tbody>
     </table>
+  </div>;
+}
+
+function FechamentoDetalheModal({detalhe,onClose,getUser}){
+  const rows=detalhe?.rows||[];
+
+  function exportar(){
+    const csv=[
+      ["Usuário Fechamento",detalhe?.usuario||""],
+      ["Filtro",detalhe?.titulo||""],
+      [],
+      ["Código imóvel","Cliente","Data","Horário","Status","Checklist enviado","Checklist respondido","Pré-atendimento","Mostrador"]
+    ];
+
+    rows.forEach(v=>csv.push([
+      v.codigo_imovel||"",
+      v.cliente_nome||"",
+      v.data_visita||"",
+      String(v.horario_visita||"").slice(0,5),
+      statusLabel(v.status),
+      v.checklist?"Sim":"Não",
+      v.checklist_ok?"Sim":"Não",
+      getUser(v.pre_atendimento_id)?.nome||"",
+      isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"")
+    ]));
+
+    exportCsv(`detalhamento-fechamento-${Date.now()}.csv`,csv);
+  }
+
+  return <div className="overlay">
+    <div className="modal fechamento-detail-modal">
+      <div className="modalhead">
+        <h2>{detalhe?.titulo||"Detalhamento do fechamento"}</h2>
+        <button onClick={onClose}><X/></button>
+      </div>
+
+      <div className="report-detail-modal-actions">
+        <strong>{rows.length} registro(s)</strong>
+        <button className="btn ghost" onClick={exportar} disabled={!rows.length}>
+          Exportar estes registros
+        </button>
+      </div>
+
+      <div className="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cód. imóvel</th>
+              <th>Cliente</th>
+              <th>Data</th>
+              <th>Horário</th>
+              <th>Status</th>
+              <th>Checklist enviado</th>
+              <th>Checklist respondido</th>
+              <th>Pré</th>
+              <th>Mostrador</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(v=>
+              <tr key={v.id}>
+                <td>{v.codigo_imovel||"-"}</td>
+                <td>{v.cliente_nome||"-"}</td>
+                <td>{v.data_visita?String(v.data_visita).split("-").reverse().join("/"):"-"}</td>
+                <td>{String(v.horario_visita||"").slice(0,5)||"-"}</td>
+                <td>{statusLabel(v.status)}</td>
+                <td>{v.checklist?"Sim":"Não"}</td>
+                <td>{v.checklist_ok?"Sim":"Não"}</td>
+                <td>{getUser(v.pre_atendimento_id)?.nome||"-"}</td>
+                <td>{isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-")}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!rows.length&&<Empty text="Nenhum registro encontrado para este indicador."/>}
+
+      <div className="modalactions">
+        <button className="btn primary" onClick={onClose}>Fechar</button>
+      </div>
+    </div>
   </div>;
 }
 

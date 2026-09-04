@@ -70646,3 +70646,58 @@
   font-weight:900;
   background:#f1f5f9;
 }
+
+
+/* v3.5.18 — detalhamento clicável do relatório de Fechamento */
+.report-detail-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:10px 0 12px;
+}
+
+.report-metric-link{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:#0f4c81;
+  font:inherit;
+  font-weight:900;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+  min-width:38px;
+  min-height:36px;
+  border-radius:8px;
+}
+
+.report-metric-link:hover:not(:disabled){
+  background:#eaf3fb;
+}
+
+.report-metric-link:disabled{
+  color:inherit;
+  text-decoration:none;
+  cursor:default;
+  opacity:1;
+}
+
+.fechamento-detail-modal{
+  width:min(1180px,96vw);
+  max-width:1180px;
+}
+
+.report-detail-modal-actions{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+
+.fechamento-detail-modal .tablewrap{
+  max-height:60vh;
+  overflow:auto;
+}
