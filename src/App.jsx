@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.15-complemento-persistencia";
+const APP_VERSION = "Castan Realtime v3.5.16-gestor-relatorio-fechamento";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -1275,9 +1275,9 @@ export default function App(){
   }
 
   async function salvarBloqueioAgenda(){
-    if(!isMostrador&&!isAdmin)return alert("Seu perfil não pode criar bloqueios de agenda.");
+    if(!isMostrador&&!isAdmin&&!isGestor)return alert("Seu perfil não pode criar bloqueios de agenda.");
 
-    const usuarioBloqueio=isAdmin ? bloqueioForm.usuario_id : user?.id;
+    const usuarioBloqueio=(isAdmin||isGestor) ? bloqueioForm.usuario_id : user?.id;
     if(!usuarioBloqueio)return alert("Selecione o mostrador da agenda que será bloqueada.");
 
     if(!bloqueioForm.data_bloqueio || !bloqueioForm.data_fim || !bloqueioForm.horario_inicio || !bloqueioForm.horario_fim){
@@ -1327,7 +1327,7 @@ export default function App(){
   async function removerBloqueioAgenda(id){
     const bloqueio=agendaBloqueios.find(b=>b.id===id);
     if(!bloqueio)return;
-    if(!isAdmin && !(isMostrador&&bloqueio.usuario_id===user?.id)){
+    if(!isAdmin && !isGestor && !(isMostrador&&bloqueio.usuario_id===user?.id)){
       return alert("Você não tem permissão para remover este bloqueio.");
     }
 
@@ -1340,7 +1340,7 @@ export default function App(){
   }
 
   async function editarBloqueioAgenda(b){
-    if(!isAdmin)return alert("Somente o administrador pode editar bloqueios de outros usuários.");
+    if(!isAdmin&&!isGestor)return alert("Somente administrador ou gestor pode editar bloqueios de outros usuários.");
 
     const data=window.prompt("Data do bloqueio (AAAA-MM-DD):",String(b.data_bloqueio||""));
     if(!data)return;
@@ -1834,6 +1834,19 @@ export default function App(){
           "Check List acionado",
           `${payload.codigo_imovel} - ${payload.cliente_nome} entrou em check list.`
         );
+      }
+
+      if(!old?.checklist_ok&&payload.checklist_ok){
+        await supabase.from("acoes_visita").insert({
+          created_at:nowISO(),
+          horario_brasil:horarioBrasil(),
+          visita_id:f.id,
+          usuario_id:user?.id,
+          tipo_acao:"checklist_respondido",
+          status_anterior:old?.status||null,
+          status_novo:payload.status,
+          observacao:"Check list respondido / OK."
+        });
       }
 
     } else {
@@ -2393,6 +2406,77 @@ async function deleteVisit(id){
     return {nome:u.nome,pos_ok:pos,fechamento:avancou,contratos,conversao:pct(contratos,avancou||pos)};
   });
 
+  const visitasComerciaisPeriodo=reportVisits.filter(v=>
+    !isFotoAnuncio(v) &&
+    !["reserva","reserva_cancelada"].includes(v.status)
+  );
+
+  const fechamentoUserIds=new Set(fechamentoUsers.map(u=>u.id));
+
+  function usuarioFechamentoDaVisita(v){
+    const atos=(acoes||[])
+      .filter(a=>a.visita_id===v.id && fechamentoUserIds.has(a.usuario_id))
+      .filter(a=>{
+        const d=parseHorarioBrasilDate(a.horario_brasil)||actionDateBR(a.created_at);
+        return !d || d<=reportEnd;
+      })
+      .sort((a,b)=>{
+        const da=parseHorarioBrasilDate(a.horario_brasil)||actionDateBR(a.created_at)||"";
+        const db=parseHorarioBrasilDate(b.horario_brasil)||actionDateBR(b.created_at)||"";
+        return String(db).localeCompare(String(da));
+      });
+
+    return atos[0]?.usuario_id||null;
+  }
+
+  const produtividadeFechamentoRows=fechamentoUsers.map(u=>{
+    const arr=visitasComerciaisPeriodo.filter(v=>usuarioFechamentoDaVisita(v)===u.id);
+
+    return {
+      id:u.id,
+      nome:u.nome,
+      visitas_total:arr.length,
+      visitas_concluidas:arr.filter(v=>
+        ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
+      ).length,
+      checklist_enviados:arr.filter(v=>Boolean(v.checklist)).length,
+      checklist_respondidos:arr.filter(v=>Boolean(v.checklist_ok)).length
+    };
+  });
+
+  const produtividadeFechamentoSemUsuario=visitasComerciaisPeriodo.filter(v=>
+    !usuarioFechamentoDaVisita(v)
+  );
+
+  const produtividadeFechamentoTotal={
+    nome:"TOTAL DO PERÍODO",
+    visitas_total:visitasComerciaisPeriodo.length,
+    visitas_concluidas:visitasComerciaisPeriodo.filter(v=>
+      ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
+    ).length,
+    checklist_enviados:visitasComerciaisPeriodo.filter(v=>Boolean(v.checklist)).length,
+    checklist_respondidos:visitasComerciaisPeriodo.filter(v=>Boolean(v.checklist_ok)).length
+  };
+
+  const produtividadeFechamentoSemIdentificacao={
+    nome:"Sem usuário de fechamento identificado",
+    visitas_total:produtividadeFechamentoSemUsuario.length,
+    visitas_concluidas:produtividadeFechamentoSemUsuario.filter(v=>
+      ["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)
+    ).length,
+    checklist_enviados:produtividadeFechamentoSemUsuario.filter(v=>Boolean(v.checklist)).length,
+    checklist_respondidos:produtividadeFechamentoSemUsuario.filter(v=>Boolean(v.checklist_ok)).length
+  };
+
+  const produtividadeFechamentoTabela=[
+    ...produtividadeFechamentoRows,
+    ...(produtividadeFechamentoSemIdentificacao.visitas_total>0
+      ? [produtividadeFechamentoSemIdentificacao]
+      : []),
+    produtividadeFechamentoTotal
+  ];
+
+
   const dashboardVisits=visitas.filter(v=>{
     const byDate = v.data_visita>=dashboardStart && v.data_visita<=dashboardEnd;
     const byPre = dashboardPre==="all" || v.pre_atendimento_id===dashboardPre;
@@ -2576,6 +2660,19 @@ function exportReport(){
 
     rows.push([],["Fechamento"],["Usuário","Pós OK","Avançou fechamento","Contratos","Conversão"]);
     fechamentoReportRows.forEach(r=>rows.push([r.nome,r.pos_ok,r.fechamento,r.contratos,r.conversao]));
+
+    rows.push(
+      [],
+      ["Produtividade do Fechamento"],
+      ["Usuário","Visitas totais","Visitas concluídas","Checklists enviados","Checklists respondidos"]
+    );
+    produtividadeFechamentoTabela.forEach(r=>rows.push([
+      r.nome,
+      r.visitas_total,
+      r.visitas_concluidas,
+      r.checklist_enviados,
+      r.checklist_respondidos
+    ]));
 
     rows.push([],["Ações do mostrador/fechamento"],["Horário da ação","Usuário","Perfil","Ação","Imóvel","Cliente","Data da visita","Status anterior","Status novo","Valor proposta","Observação"]);
     acoes.filter(a=>{
@@ -3105,11 +3202,11 @@ function exportReport(){
           }
           {view==="bloquear_agenda"&&
             <Card title="Bloqueios de agenda">
-              <p className="hint">Mostradores podem administrar os próprios bloqueios. Administradores podem criar, editar ou remover qualquer bloqueio, inclusive de usuários inativos.</p>
+              <p className="hint">Mostradores podem administrar os próprios bloqueios. Administradores e gestores podem criar, editar ou remover qualquer bloqueio, inclusive de usuários inativos.</p>
 
-              {(isMostrador||isAdmin)&&<>
+              {(isMostrador||isAdmin||isGestor)&&<>
               <div className="bloqueio-form">
-                {isAdmin&&
+                {(isAdmin||isGestor)&&
                   <label className="full">
                     <span>Mostrador *</span>
                     <select value={bloqueioForm.usuario_id} onChange={e=>setBloqueioForm({...bloqueioForm,usuario_id:e.target.value})}>
@@ -3156,7 +3253,7 @@ function exportReport(){
             </>}
 
               <h3>Bloqueios ativos dos mostradores</h3>
-              {!isMostrador&&!isAdmin&&<div className="info-box">Você está em modo consulta. Apenas mostradores e administradores podem alterar bloqueios.</div>}
+              {!isMostrador&&!isAdmin&&!isGestor&&<div className="info-box">Você está em modo consulta. Apenas mostradores, gestores e administradores podem alterar bloqueios.</div>}
               <div className="bloqueio-lista">
                 {agendaBloqueios
                   .filter(b=>b.ativo!==false)
@@ -3166,10 +3263,10 @@ function exportReport(){
                       <strong>{getUser(b.usuario_id)?.nome||"Mostrador"}{getUser(b.usuario_id)?.ativo===false?" (Inativo)":""} • {String(b.data_bloqueio||"").split("-").reverse().join("/")} • {String(b.horario_inicio||"").slice(0,5)} às {String(b.horario_fim||"").slice(0,5)}</strong>
                       <p><b>Motivo:</b> {b.justificativa}</p>
                       <div className="bloqueio-actions">
-                        {isAdmin&&
+                        {(isAdmin||isGestor)&&
                           <button className="btn ghost" onClick={()=>editarBloqueioAgenda(b)}>Editar bloqueio</button>
                         }
-                        {(isAdmin||(isMostrador&&b.usuario_id===user?.id))&&
+                        {(isAdmin||isGestor||(isMostrador&&b.usuario_id===user?.id))&&
                           <button className="btn ghost" onClick={()=>removerBloqueioAgenda(b.id)}>Remover bloqueio</button>
                         }
                       </div>
@@ -3367,6 +3464,15 @@ function exportReport(){
                   <Metric title="Clientes/imóveis revisitados" value={revisitaReportRows.length}/>
                 </div>
                 <RevisitTable rows={revisitaReportRows}/>
+              </section>
+
+              <section className="report-section fechamento-produtividade-section">
+                <h2>Produtividade da Equipe de Fechamento</h2>
+                <p className="hint">
+                  Período: {String(reportStart||"").split("-").reverse().join("/")} a {String(reportEnd||"").split("-").reverse().join("/")}.
+                  A atribuição por usuário considera a última ação registrada pela equipe de Fechamento em cada visita.
+                </p>
+                <FechamentoProdutividadeTable rows={produtividadeFechamentoTabela}/>
               </section>
 
               <section className="report-section">
@@ -4136,6 +4242,34 @@ function FechamentoTable({rows}){
     </table>
   </div>;
 }
+
+function FechamentoProdutividadeTable({rows}){
+  return <div className="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Usuário (Fechamento)</th>
+          <th>Visitas totais</th>
+          <th>Visitas concluídas</th>
+          <th>Checklists enviados</th>
+          <th>Checklists respondidos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r,i)=>
+          <tr key={`${r.nome}-${i}`} className={r.nome==="TOTAL DO PERÍODO"?"report-total-row":""}>
+            <td>{r.nome}</td>
+            <td>{r.visitas_total}</td>
+            <td>{r.visitas_concluidas}</td>
+            <td>{r.checklist_enviados}</td>
+            <td>{r.checklist_respondidos}</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>;
+}
+
 
 function FunnelReport({rows}){
   const max=Math.max(1,...rows.map(r=>Number(r.total||0)));

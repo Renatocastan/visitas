@@ -70635,3 +70635,14 @@
   padding:8px 10px;
   background:#fff;
 }
+
+
+/* v3.5.16 — relatório produtividade fechamento */
+.fechamento-produtividade-section .tablewrap{
+  margin-top:12px;
+}
+
+.report-total-row{
+  font-weight:900;
+  background:#f1f5f9;
+}
