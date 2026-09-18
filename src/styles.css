@@ -70980,3 +70980,50 @@
     grid-template-columns:78px repeat(6,247px) !important;
   }
 }
+
+/* v3.5.27 — agenda semanal sempre cabe na largura da tela, sem rolagem horizontal */
+.week-proportional{
+  width:100% !important;
+  max-width:100% !important;
+  overflow-x:hidden !important;
+  scrollbar-gutter:auto !important;
+}
+.week-proportional .week-scheduler-head,
+.week-proportional-body{
+  width:100% !important;
+  min-width:0 !important;
+  grid-template-columns:62px repeat(6,minmax(0,1fr)) !important;
+}
+.week-proportional-time{
+  padding-left:5px;
+  padding-right:4px;
+  font-size:12px;
+}
+.week-timed-event{
+  padding:4px 5px;
+}
+.week-timed-event strong{
+  font-size:10px;
+  line-height:1.08;
+  overflow-wrap:anywhere;
+}
+.week-timed-event span{
+  font-size:10px;
+  line-height:1.08;
+  overflow-wrap:anywhere;
+}
+.week-timed-event small{
+  font-size:9px;
+  line-height:1.08;
+  overflow-wrap:anywhere;
+}
+@media(max-width:900px){
+  .week-proportional .week-scheduler-head,
+  .week-proportional-body{
+    grid-template-columns:50px repeat(6,minmax(0,1fr)) !important;
+  }
+  .week-proportional-time{font-size:10px;padding-left:3px;padding-right:2px;}
+  .week-timed-event{border-left-width:3px;padding:3px;}
+  .week-timed-event strong,.week-timed-event span{font-size:9px;}
+  .week-timed-event small{font-size:8px;}
+}

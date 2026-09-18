@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.26-agenda-proporcional-legivel";
+const APP_VERSION = "Castan Realtime v3.5.27-agenda-proporcional-sem-scroll";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
