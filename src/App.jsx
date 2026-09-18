@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.27-agenda-proporcional-sem-scroll";
+const APP_VERSION = "Castan Realtime v3.5.28-agenda-filtros-botoes";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -578,8 +578,13 @@ export default function App(){
   const [canceladasMotivo,setCanceladasMotivo]=useState("all");
   const [canceladasStart,setCanceladasStart]=useState("");
   const [canceladasEnd,setCanceladasEnd]=useState("");
-  const [filterPre,setFilterPre]=useState(savedFilters.filterPre||"all");
-  const [filterMostrador,setFilterMostrador]=useState(savedFilters.filterMostrador||"all");
+  const normalizeSavedMultiFilter=(value)=>{
+    if(Array.isArray(value)) return value.filter(Boolean);
+    if(!value || value==="all") return [];
+    return [value];
+  };
+  const [filterPre,setFilterPre]=useState(()=>normalizeSavedMultiFilter(savedFilters.filterPre));
+  const [filterMostrador,setFilterMostrador]=useState(()=>normalizeSavedMultiFilter(savedFilters.filterMostrador));
   const [filterStatus,setFilterStatus]=useState(savedFilters.filterStatus||"all");
   const [searchTerm,setSearchTerm]=useState(savedFilters.searchTerm||"");
 
@@ -2176,8 +2181,10 @@ async function deleteVisit(id){
     return visitas.filter(v=>{
       if(!canSeeAllVisits && !(v.created_by===user?.id || v.pre_atendimento_id===user?.id || v.mostrador_id===user?.id)) return false;
       if(isContratos && !isContratoVisibleVisit(v)) return false;
-      const byPre=filterPre==="all"||v.pre_atendimento_id===filterPre;
-      const byMostrador=matchMostradorFiltro(v,filterMostrador);
+      const preSelecionados=Array.isArray(filterPre)?filterPre:(filterPre&&filterPre!=="all"?[filterPre]:[]);
+      const mostradoresSelecionados=Array.isArray(filterMostrador)?filterMostrador:(filterMostrador&&filterMostrador!=="all"?[filterMostrador]:[]);
+      const byPre=preSelecionados.length===0||preSelecionados.includes(v.pre_atendimento_id);
+      const byMostrador=mostradoresSelecionados.length===0||mostradoresSelecionados.some(filtro=>matchMostradorFiltro(v,filtro));
       const byStatus=filterStatus==="all"||v.status===filterStatus;
       const haystack=[
         v.codigo_imovel,
@@ -4089,20 +4096,33 @@ function Card({title,children}){return <section className="card">{title&&<h2>{ti
 function Empty({text}){return <div className="empty">{text}</div>}
 
 function Filters({preUsers,mostradores,filterPre,setFilterPre,filterMostrador,setFilterMostrador,filterStatus,setFilterStatus,searchTerm,setSearchTerm}){
-  return <div className="filters">
-    <input placeholder="Buscar imóvel, cliente, proprietário ou contato" value={searchTerm||""} onChange={e=>setSearchTerm(e.target.value)} style={{minWidth:260}}/>
-    <select value={filterPre} onChange={e=>setFilterPre(e.target.value)}>
-      <option value="all">Todos pré-atendimentos</option>
-      {preUsers.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
-    </select>
-    <select value={filterMostrador} onChange={e=>setFilterMostrador(e.target.value)}>
-      <option value="all">Todos mostradores</option>
-      {mostradores.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
-    </select>
-    <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
-      <option value="all">Todos status</option>
-      {STATUS.map(s=><option key={s[0]} value={s[0]}>{s[1]}</option>)}
-    </select>
+  const preSelecionados=Array.isArray(filterPre)?filterPre:[];
+  const mostradoresSelecionados=Array.isArray(filterMostrador)?filterMostrador:[];
+  const preAtivos=preUsers.filter(u=>u.ativo!==false);
+  const mostradoresAtivos=mostradores.filter(u=>u.ativo!==false && !u.externo);
+
+  function toggle(setter,selecionados,id){
+    setter(selecionados.includes(id)?selecionados.filter(x=>x!==id):[...selecionados,id]);
+  }
+
+  return <div className="calendar-filter-panel">
+    <div className="calendar-filter-top">
+      <input placeholder="Buscar imóvel, cliente, proprietário ou contato" value={searchTerm||""} onChange={e=>setSearchTerm(e.target.value)}/>
+      <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+        <option value="all">Todos status</option>
+        {STATUS.map(s=><option key={s[0]} value={s[0]}>{s[1]}</option>)}
+      </select>
+    </div>
+    <div className="quick-filter-row">
+      <strong>Pré-atendimento:</strong>
+      <button type="button" className={`quick-filter-btn ${preSelecionados.length===0?"active":""}`} onClick={()=>setFilterPre([])}>Todos</button>
+      {preAtivos.map(u=><button type="button" key={u.id} className={`quick-filter-btn ${preSelecionados.includes(u.id)?"active":""}`} onClick={()=>toggle(setFilterPre,preSelecionados,u.id)}>{u.nome}</button>)}
+    </div>
+    <div className="quick-filter-row">
+      <strong>Mostradores:</strong>
+      <button type="button" className={`quick-filter-btn ${mostradoresSelecionados.length===0?"active":""}`} onClick={()=>setFilterMostrador([])}>Todos</button>
+      {mostradoresAtivos.map(u=><button type="button" key={u.id} className={`quick-filter-btn ${mostradoresSelecionados.includes(u.id)?"active":""}`} onClick={()=>toggle(setFilterMostrador,mostradoresSelecionados,u.id)}>{u.nome}</button>)}
+    </div>
   </div>;
 }
 
