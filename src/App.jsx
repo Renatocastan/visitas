@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.24-atalho-busca-imovel";
+const APP_VERSION = "Castan Realtime v3.5.25-agenda-proporcional";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -4254,6 +4254,10 @@ function Calendar({year,month,visitas,bloqueios=[],colorForUser,getUser,onNew,on
 
 function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onNew,onEdit}){
   const [tooltip,setTooltip]=useState(null);
+  const SLOT_HEIGHT=48;
+  const DAY_START=8*60;
+  const DAY_END=18*60+30;
+  const TOTAL_MINUTES=DAY_END-DAY_START;
 
   const monday=new Date(weekStart);
   const weekday=monday.getDay();
@@ -4267,50 +4271,83 @@ function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onN
   });
 
   const slots=Array.from({length:21}).map((_,i)=>{
-    const total=8*60+i*30;
+    const total=DAY_START+i*30;
     const h=Math.floor(total/60);
     const m=total%60;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
   });
+
+  function minutesFromTime(value,fallback=DAY_START){
+    const txt=String(value||"").slice(0,5);
+    const [h,m]=txt.split(":").map(Number);
+    if(!Number.isFinite(h)||!Number.isFinite(m)) return fallback;
+    return h*60+m;
+  }
 
   function setTip(e,text){
     const rect=e.currentTarget.getBoundingClientRect();
     setTooltip({text,x:Math.min(rect.left,window.innerWidth-330),y:Math.max(12,rect.top-12)});
   }
 
-  function sortByTime(a,b){
-    const ta=a.tipo==="bloqueio"?a.item.horario_inicio:a.item.horario_visita;
-    const tb=b.tipo==="bloqueio"?b.item.horario_inicio:b.item.horario_visita;
-    return String(ta).localeCompare(String(tb));
+  function eventsForDate(date){
+    return [
+      ...bloqueios.filter(b=>b.data_bloqueio===date).map(b=>({
+        tipo:"bloqueio",id:`bloq-${b.id}`,item:b,
+        start:minutesFromTime(b.horario_inicio),
+        end:minutesFromTime(b.horario_fim,minutesFromTime(b.horario_inicio)+30)
+      })),
+      ...visitas.filter(v=>v.data_visita===date).map(v=>({
+        tipo:"visita",id:v.id,item:v,
+        start:minutesFromTime(v.horario_visita),
+        end:minutesFromTime(v.horario_fim_visita,minutesFromTime(v.horario_visita)+30)
+      }))
+    ]
+      .map(ev=>({...ev,start:Math.max(DAY_START,ev.start),end:Math.min(DAY_END,Math.max(ev.start+15,ev.end))}))
+      .filter(ev=>ev.end>DAY_START&&ev.start<DAY_END)
+      .sort((a,b)=>a.start-b.start || b.end-a.end);
   }
 
-  function belongsToSlot(ev,slot){
-    const hora=String(ev.tipo==="bloqueio"?ev.item.horario_inicio:ev.item.horario_visita).slice(0,5);
-    const [hh,mm]=hora.split(":").map(Number);
-    const bucketMin = (mm||0) < 30 ? 0 : 30;
-    const slotCalculado = `${String(hh||0).padStart(2,"0")}:${String(bucketMin).padStart(2,"0")}`;
-    return slotCalculado===slot;
-  }
+  // Distribui apenas eventos realmente simultâneos em colunas lado a lado.
+  // Quando o conflito termina, o próximo grupo volta a usar 100% da largura do dia.
+  function layoutDayEvents(date){
+    const events=eventsForDate(date);
+    const groups=[];
+    let current=[];
+    let groupEnd=-1;
 
-  const eventsByDateSlot = {};
-  days.forEach(d=>{
-    const date=dateStr(d);
-    const eventos=[
-      ...bloqueios.filter(b=>b.data_bloqueio===date).map(b=>({tipo:"bloqueio",id:`bloq-${b.id}`,item:b})),
-      ...visitas.filter(v=>v.data_visita===date).map(v=>({tipo:"visita",id:v.id,item:v}))
-    ].sort(sortByTime);
-
-    slots.forEach(slot=>{
-      eventsByDateSlot[`${date}|${slot}`]=eventos.filter(ev=>belongsToSlot(ev,slot));
+    events.forEach(ev=>{
+      if(current.length===0 || ev.start<groupEnd){
+        current.push(ev);
+        groupEnd=Math.max(groupEnd,ev.end);
+      }else{
+        groups.push(current);
+        current=[ev];
+        groupEnd=ev.end;
+      }
     });
-  });
+    if(current.length) groups.push(current);
 
-  function rowMinHeight(slot){
-    const maxItems=Math.max(...days.map(d=>eventsByDateSlot[`${dateStr(d)}|${slot}`]?.length||0),1);
-    return Math.max(48, maxItems*48 + 8);
+    return groups.flatMap(group=>{
+      const columnEnds=[];
+      const placed=group.map(ev=>{
+        let col=columnEnds.findIndex(end=>end<=ev.start);
+        if(col===-1){ col=columnEnds.length; columnEnds.push(ev.end); }
+        else columnEnds[col]=ev.end;
+        return {...ev,col};
+      });
+      const cols=Math.max(1,columnEnds.length);
+      return placed.map(ev=>({...ev,cols}));
+    });
   }
 
-  return <div className="week-scheduler week-scheduler-list week-autoheight" onMouseLeave={()=>setTooltip(null)}>
+  function newFromSlot(date,slot,e){
+    if(e.target.closest(".week-timed-event")) return;
+    onNew(date,slot);
+  }
+
+  const timelineHeight=slots.length*SLOT_HEIGHT;
+
+  return <div className="week-scheduler week-proportional" onMouseLeave={()=>setTooltip(null)}>
     <div className="week-scheduler-head">
       <div className="time-col-head"></div>
       {days.map(d=>{
@@ -4323,40 +4360,47 @@ function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onN
       })}
     </div>
 
-    <div className="week-table">
-      {slots.map(slot=>{
-        const height=rowMinHeight(slot);
-        return <React.Fragment key={slot}>
-          <div className={`week-time-cell ${slot.endsWith(":30")?"half-hour-label":""}`} style={{minHeight:height}}>{slot}</div>
-          {days.map(d=>{
-            const date=dateStr(d);
-            const items=eventsByDateSlot[`${date}|${slot}`]||[];
-            return <div className="week-slot-cell" key={`${date}-${slot}`} style={{minHeight:height}} onClick={()=>onNew(date,slot)}>
-              {items.map(ev=>{
-                if(ev.tipo==="bloqueio"){
-                  const b=ev.item;
-                  return <div key={ev.id} className="week-list-event bloqueio-event" onMouseEnter={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseMove={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>e.stopPropagation()}>
-                    <strong>{String(b.horario_inicio).slice(0,5)}-{String(b.horario_fim).slice(0,5)} • BLOQUEADO</strong>
-                    <span>{getUser?.(b.usuario_id)?.nome||"Mostrador"} • {b.justificativa||"Sem motivo"}</span>
-                  </div>;
-                }
+    <div className="week-proportional-body">
+      <div className="week-proportional-times" style={{height:timelineHeight}}>
+        {slots.map(slot=><div key={slot} className={`week-proportional-time ${slot.endsWith(":30")?"half-hour-label":""}`} style={{height:SLOT_HEIGHT}}>{slot}</div>)}
+      </div>
 
-                const v=ev.item;
-                return <div key={ev.id} className={`week-list-event ${v.status==="cancelada"?"calendar-cancelada":""} ${v.atualizar_fotos?"foto-destaque-card":""}`} style={{borderLeftColor:colorForUser(v)}} onMouseEnter={e=>setTip(e,visitTooltip(v,getUser))} onMouseMove={e=>setTip(e,visitTooltip(v,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>{e.stopPropagation();onEdit(v)}}>
-                  <strong>{v.status==="cancelada"?"⚠️ ":""}{isFotoAnuncio(v)?"📸 ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
-                  <span>{v.status==="reserva"?(getUser?.(v.mostrador_id)?.nome||"Reserva"):v.cliente_nome}</span>
+      {days.map(d=>{
+        const date=dateStr(d);
+        const events=layoutDayEvents(date);
+        return <div className="week-proportional-day" key={date} style={{height:timelineHeight}}>
+          <div className="week-proportional-slots">
+            {slots.map(slot=><div key={slot} className="week-proportional-slot" style={{height:SLOT_HEIGHT}} onClick={e=>newFromSlot(date,slot,e)} />)}
+          </div>
+          <div className="week-proportional-events">
+            {events.map(ev=>{
+              const top=((ev.start-DAY_START)/30)*SLOT_HEIGHT;
+              const height=Math.max(24,((ev.end-ev.start)/30)*SLOT_HEIGHT-3);
+              const width=100/ev.cols;
+              const left=ev.col*width;
+              if(ev.tipo==="bloqueio"){
+                const b=ev.item;
+                return <div key={ev.id} className="week-timed-event bloqueio-event" style={{top,left:`calc(${left}% + 2px)`,width:`calc(${width}% - 4px)`,height}} onMouseEnter={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseMove={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>e.stopPropagation()}>
+                  <strong>{String(b.horario_inicio).slice(0,5)}-{String(b.horario_fim).slice(0,5)} • BLOQUEADO</strong>
+                  <span>{getUser?.(b.usuario_id)?.nome||"Agenda inteira"}</span>
+                  <small>{b.justificativa||"Sem motivo"}</small>
                 </div>;
-              })}
-            </div>;
-          })}
-        </React.Fragment>;
+              }
+              const v=ev.item;
+              return <div key={ev.id} className={`week-timed-event ${v.status==="cancelada"?"calendar-cancelada":""} ${v.atualizar_fotos?"foto-destaque-card":""}`} style={{top,left:`calc(${left}% + 2px)`,width:`calc(${width}% - 4px)`,height,borderLeftColor:v.status==="cancelada"?"#B91C1C":colorForUser(v)}} onMouseEnter={e=>setTip(e,visitTooltip(v,getUser))} onMouseMove={e=>setTip(e,visitTooltip(v,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>{e.stopPropagation();onEdit(v)}}>
+                <strong>{v.status==="cancelada"?"⚠️ ":""}{isFotoAnuncio(v)?"📸 ":""}{String(v.horario_visita).slice(0,5)}-{String(v.horario_fim_visita||v.horario_visita).slice(0,5)} • {v.status==="cancelada"?"CANCELADA":(v.status==="reserva"?"RESERVA":v.codigo_imovel)}</strong>
+                <span>{v.status==="reserva"?(getUser?.(v.mostrador_id)?.nome||"Reserva"):(getUser?.(v.mostrador_id)?.nome||v.cliente_nome)}</span>
+                {v.status!=="reserva"&&<small>{v.cliente_nome}</small>}
+              </div>;
+            })}
+          </div>
+        </div>;
       })}
     </div>
 
     {tooltip&&<div className="calendar-tooltip-floating" style={{left:tooltip.x,top:tooltip.y}}>{tooltip.text}</div>}
   </div>;
 }
-
 
 function DailyCalendar({currentDay,visitas,bloqueios=[],colorForUser,getUser,onNew,onEdit}){
   const d = new Date(currentDay+"T00:00:00");

@@ -70827,3 +70827,122 @@
     flex-direction:column;
   }
 }
+
+/* v3.5.25 — agenda semanal proporcional à duração + simultâneas lado a lado */
+.week-proportional{
+  width:100%;
+  overflow-x:visible;
+}
+.week-proportional .week-scheduler-head{
+  display:grid !important;
+  grid-template-columns:78px repeat(6,minmax(0,1fr)) !important;
+  min-width:0 !important;
+  width:100% !important;
+}
+.week-proportional-body{
+  display:grid;
+  grid-template-columns:78px repeat(6,minmax(0,1fr));
+  width:100%;
+  border-left:1px solid #dbe5ef;
+  border-top:1px solid #e5e7eb;
+}
+.week-proportional-times{
+  background:#f8fafc;
+}
+.week-proportional-time{
+  border-right:1px solid #dbe5ef;
+  border-bottom:1px solid #e5e7eb;
+  padding:8px 7px;
+  color:#64748b;
+  font-weight:900;
+  font-size:13px;
+  box-sizing:border-box;
+}
+.week-proportional-day{
+  position:relative;
+  min-width:0;
+  border-right:1px solid #e5e7eb;
+  background:#fff;
+}
+.week-proportional-slots,
+.week-proportional-events{
+  position:absolute;
+  inset:0;
+}
+.week-proportional-events{
+  pointer-events:none;
+  z-index:2;
+}
+.week-proportional-slot{
+  border-bottom:1px solid #eef2f7;
+  box-sizing:border-box;
+  cursor:pointer;
+}
+.week-proportional-slot:hover{
+  background:#f8fafc;
+}
+.week-timed-event{
+  position:absolute;
+  z-index:3;
+  pointer-events:auto;
+  box-sizing:border-box;
+  overflow:hidden;
+  border:1px solid #d8e2ec;
+  border-left:5px solid #123b63;
+  border-radius:9px;
+  background:#f8fbff;
+  padding:5px 6px;
+  box-shadow:0 2px 6px rgba(15,23,42,.08);
+  cursor:pointer;
+  line-height:1.15;
+  min-width:0;
+}
+.week-timed-event:hover{
+  z-index:10;
+  box-shadow:0 5px 14px rgba(15,23,42,.18);
+}
+.week-timed-event strong,
+.week-timed-event span,
+.week-timed-event small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.week-timed-event strong{
+  font-size:11px;
+  white-space:nowrap;
+  color:#0f2742;
+}
+.week-timed-event span{
+  margin-top:3px;
+  font-size:11px;
+  white-space:nowrap;
+  color:#334155;
+}
+.week-timed-event small{
+  margin-top:2px;
+  font-size:10px;
+  white-space:nowrap;
+  color:#64748b;
+}
+.week-timed-event.calendar-cancelada{
+  background:#fff1f2 !important;
+  border-color:#fecdd3 !important;
+  border-left-color:#b91c1c !important;
+}
+.week-timed-event.foto-destaque-card{
+  border-left-color:#f97316 !important;
+}
+.week-timed-event.bloqueio-event{
+  background:#fff7f7;
+  border-color:#fecaca;
+  border-left-color:#b91c1c;
+}
+@media(max-width:1100px){
+  .week-proportional{overflow-x:auto;}
+  .week-proportional .week-scheduler-head,
+  .week-proportional-body{
+    min-width:1180px !important;
+    grid-template-columns:78px repeat(6,184px) !important;
+  }
+}
