@@ -2203,6 +2203,25 @@ async function deleteVisit(id){
     });
   },[visitas,filterPre,filterMostrador,filterStatus,searchTerm,usuarios,isContratos,user?.id,canSeeAllVisits]);
 
+  const visibleAgendaBloqueios=useMemo(()=>{
+    const mostradoresSelecionados=Array.isArray(filterMostrador)
+      ? filterMostrador
+      : (filterMostrador&&filterMostrador!=="all"?[filterMostrador]:[]);
+
+    return agendaBloqueios.filter(b=>{
+      if(b.ativo===false)return false;
+
+      // Bloqueio geral (sem usuario_id) afeta toda a agenda e deve continuar visível.
+      if(!b.usuario_id)return true;
+
+      // Sem filtro de mostrador: exibe todos os bloqueios ativos.
+      if(mostradoresSelecionados.length===0)return true;
+
+      // Com filtro: exibe somente bloqueios dos mostradores selecionados.
+      return mostradoresSelecionados.includes(b.usuario_id);
+    });
+  },[agendaBloqueios,filterMostrador]);
+
   const codigoBuscaExata=String(searchTerm||"").trim().toLowerCase();
 
   const visitasAtalhoCodigo=useMemo(()=>{
@@ -3406,10 +3425,10 @@ function exportReport(){
               </div>
 
               {calendarMode==="month"
-                ? <Calendar year={year} month={month} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={agendaBloqueios.filter(b=>b.ativo!==false)} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
+                ? <Calendar year={year} month={month} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={visibleAgendaBloqueios} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
                 : calendarMode==="week"
-                  ? <WeeklyCalendar weekStart={weekStart} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={agendaBloqueios.filter(b=>b.ativo!==false)} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
-                  : <DailyCalendar currentDay={currentDay} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={agendaBloqueios.filter(b=>b.ativo!==false)} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
+                  ? <WeeklyCalendar weekStart={weekStart} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={visibleAgendaBloqueios} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
+                  : <DailyCalendar currentDay={currentDay} visitas={visibleVisits.filter(v=>v.status!=="reserva_cancelada")} bloqueios={visibleAgendaBloqueios} colorForUser={colorForVisit} getUser={getUser} onNew={startNewVisit} onEdit={openVisit}/>
               }
             </Card>
           </>}
