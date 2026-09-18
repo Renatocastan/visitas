@@ -70946,3 +70946,37 @@
     grid-template-columns:78px repeat(6,184px) !important;
   }
 }
+
+
+/* v3.5.26 — legibilidade em simultaneidades e melhor aproveitamento horizontal */
+.week-proportional .week-scheduler-head,
+.week-proportional-body{
+  min-width:1480px !important;
+  grid-template-columns:78px repeat(6,minmax(230px,1fr)) !important;
+}
+.week-proportional{
+  overflow-x:auto !important;
+  scrollbar-gutter:stable;
+}
+.week-timed-event{
+  padding:5px 7px;
+}
+.week-timed-event strong{
+  white-space:normal;
+  line-height:1.12;
+  max-height:2.24em;
+}
+.week-timed-event span,
+.week-timed-event small{
+  white-space:normal;
+  line-height:1.12;
+  max-height:2.24em;
+}
+/* Em cartões muito estreitos prioriza horário/código; detalhes seguem no tooltip. */
+@media(max-width:1500px){
+  .week-proportional .week-scheduler-head,
+  .week-proportional-body{
+    min-width:1560px !important;
+    grid-template-columns:78px repeat(6,247px) !important;
+  }
+}

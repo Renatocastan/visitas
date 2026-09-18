@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.25-agenda-proporcional";
+const APP_VERSION = "Castan Realtime v3.5.26-agenda-proporcional-legivel";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -4336,7 +4336,23 @@ function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onN
         return {...ev,col};
       });
       const cols=Math.max(1,columnEnds.length);
-      return placed.map(ev=>({...ev,cols}));
+
+      // Cada evento pode ocupar colunas vizinhas que estejam livres durante
+      // TODO o seu intervalo. Isso evita cartões estreitos depois que um
+      // conflito parcial termina (comportamento semelhante ao Google Calendar).
+      const byColumn=Array.from({length:cols},()=>[]);
+      placed.forEach(ev=>byColumn[ev.col].push(ev));
+      const overlaps=(a,b)=>a.start < b.end && b.start < a.end;
+
+      return placed.map(ev=>{
+        let span=1;
+        for(let c=ev.col+1;c<cols;c++){
+          const occupied=byColumn[c].some(other=>overlaps(ev,other));
+          if(occupied) break;
+          span++;
+        }
+        return {...ev,cols,span};
+      });
     });
   }
 
@@ -4376,8 +4392,9 @@ function WeeklyCalendar({weekStart,visitas,bloqueios=[],colorForUser,getUser,onN
             {events.map(ev=>{
               const top=((ev.start-DAY_START)/30)*SLOT_HEIGHT;
               const height=Math.max(24,((ev.end-ev.start)/30)*SLOT_HEIGHT-3);
-              const width=100/ev.cols;
-              const left=ev.col*width;
+              const columnWidth=100/ev.cols;
+              const width=columnWidth*(ev.span||1);
+              const left=ev.col*columnWidth;
               if(ev.tipo==="bloqueio"){
                 const b=ev.item;
                 return <div key={ev.id} className="week-timed-event bloqueio-event" style={{top,left:`calc(${left}% + 2px)`,width:`calc(${width}% - 4px)`,height}} onMouseEnter={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseMove={e=>setTip(e,bloqueioTooltip(b,getUser))} onMouseLeave={()=>setTooltip(null)} onClick={e=>e.stopPropagation()}>
