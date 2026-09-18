@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.28-agenda-filtros-botoes";
+const APP_VERSION = "Castan Realtime v3.5.30-agenda-filtros-botoes";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -501,6 +501,10 @@ function emptyVisit(user, preUsers, mostradores){
     checklist:false,
     valor_proposta:"",
     contrato_fechado:false,
+    desistiu:false,
+    desistiu_motivo:"",
+    desistiu_em:null,
+    desistiu_por:null,
     latitude:null,
     longitude:null,
     geolocalizacao_data:null,
@@ -1650,7 +1654,7 @@ export default function App(){
       return alert("Para avançar para fechamento, informe o valor da proposta.");
     }
 
-    if(isContratos && f.status==="contrato"){
+    if(isContratos && f.status==="contrato" && !f.desistiu){
       if(!f.contrato_fechado){
         return alert('Para salvar como Virou contrato, ative o campo "Virou contrato".');
       }
@@ -1667,6 +1671,14 @@ export default function App(){
 
     if(isFechamento && f.status==="avancou_fechamento" && !f.checklist_ok){
       return alert("Para avançar para fechamento, marque o Check list OK / enviar para contratos.");
+    }
+
+    if(f.desistiu && !String(f.desistiu_motivo||"").trim()){
+      return alert("Informe o motivo da desistência antes de salvar.");
+    }
+
+    if(f.desistiu && f.contrato_fechado){
+      return alert('"Virou contrato" e "Desistiu" não podem ficar marcados ao mesmo tempo.');
     }
 
     if(["cancelada","reserva_cancelada"].includes(f.status) && !f.motivo_cancelamento){
@@ -1759,6 +1771,10 @@ export default function App(){
       checklist:Boolean(f.checklist),
       valor_proposta:normalizeMoney(f.valor_proposta),
       contrato_fechado:Boolean(f.contrato_fechado),
+      desistiu:Boolean(f.desistiu),
+      desistiu_motivo:f.desistiu?String(f.desistiu_motivo||"").trim():null,
+      desistiu_em:f.desistiu?(old?.desistiu?old?.desistiu_em:nowISO()):null,
+      desistiu_por:f.desistiu?(old?.desistiu?old?.desistiu_por:(user?.id||null)):null,
       latitude:f.latitude||null,
       longitude:f.longitude||null,
       geolocalizacao_data:f.geolocalizacao_data||null,
@@ -1833,6 +1849,39 @@ export default function App(){
             `${payload.codigo_imovel} - ${payload.cliente_nome} virou contrato.`
           );
         }
+      }
+
+      if(!old?.desistiu && payload.desistiu){
+        await supabase.from("acoes_visita").insert({
+          created_at:nowISO(),
+          horario_brasil:horarioBrasil(),
+          visita_id:f.id,
+          usuario_id:user?.id,
+          tipo_acao:"desistencia_locacao",
+          status_anterior:old?.status||null,
+          status_novo:payload.status,
+          observacao:`Locação desistiu. Motivo: ${payload.desistiu_motivo}`,
+          valor_proposta:payload.valor_proposta
+        });
+
+        await notifyMany(
+          getEnvolvidosVisita(payload),
+          "Locação desistiu",
+          `${payload.codigo_imovel} - ${payload.cliente_nome}: ${payload.desistiu_motivo}.`
+        );
+      }
+
+      if(old?.desistiu && !payload.desistiu){
+        await supabase.from("acoes_visita").insert({
+          created_at:nowISO(),
+          horario_brasil:horarioBrasil(),
+          visita_id:f.id,
+          usuario_id:user?.id,
+          tipo_acao:"reabertura_desistencia",
+          status_anterior:old?.status||null,
+          status_novo:payload.status,
+          observacao:"Marcação de desistência removida."
+        });
       }
 
       if(!old?.revisita && payload.revisita){
@@ -2366,7 +2415,7 @@ async function deleteVisit(id){
   const canceladasRel = statusCount("cancelada");
   const posOkRel = statusCount("pos_ok");
   const fechamentoRel = statusCount("avancou_fechamento");
-  const contratosRel = reportVisits.filter(v=>v.status==="contrato" || v.contrato_fechado).length;
+  const contratosRel = reportVisits.filter(v=>(v.status==="contrato" || v.contrato_fechado) && !v.desistiu).length;
 
   const statusReportRows = STATUS.map(([id,label])=>({
     id,
@@ -2489,7 +2538,7 @@ async function deleteVisit(id){
   const buildReport=arr=>{
     const visitasTotal=arr.length;
     const concluidas=arr.filter(v=>["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)).length;
-    const contratos=arr.filter(v=>v.contrato_fechado||v.status==="contrato").length;
+    const contratos=arr.filter(v=>(v.contrato_fechado||v.status==="contrato")&&!v.desistiu).length;
     return {
       visitas:visitasTotal,
       concluidas,
@@ -2511,7 +2560,7 @@ async function deleteVisit(id){
     const arr=reportVisits.filter(v=>v.updated_by===u.id || v.pre_atendimento_id===u.id || v.created_by===u.id);
     const pos=arr.filter(v=>v.status==="pos_ok").length;
     const avancou=arr.filter(v=>v.status==="avancou_fechamento").length;
-    const contratos=arr.filter(v=>v.status==="contrato"||v.contrato_fechado).length;
+    const contratos=arr.filter(v=>(v.status==="contrato"||v.contrato_fechado)&&!v.desistiu).length;
     return {nome:u.nome,pos_ok:pos,fechamento:avancou,contratos,conversao:pct(contratos,avancou||pos)};
   });
 
@@ -2703,14 +2752,14 @@ async function deleteVisit(id){
   const totalDashboard = dashboardVisits.length;
   const concluidasDashboard = dashboardVisits.filter(v=>["concluida","avancou_fechamento","pos_ok","contrato"].includes(v.status)).length;
   const canceladasDashboard = dashboardVisits.filter(v=>v.status==="cancelada").length;
-  const contratosDashboard = dashboardVisits.filter(v=>v.status==="contrato" || v.contrato_fechado).length;
+  const contratosDashboard = dashboardVisits.filter(v=>(v.status==="contrato" || v.contrato_fechado) && !v.desistiu).length;
 
   const conversaoDashboard = totalDashboard ? Math.round((contratosDashboard/totalDashboard)*100) : 0;
   const cancelamentoDashboard = totalDashboard ? Math.round((canceladasDashboard/totalDashboard)*100) : 0;
   const conclusaoDashboard = totalDashboard ? Math.round((concluidasDashboard/totalDashboard)*100) : 0;
 
   const visitasContrato=dashboardVisits
-    .filter(v=>v.status==="contrato" || v.contrato_fechado)
+    .filter(v=>(v.status==="contrato" || v.contrato_fechado) && !v.desistiu)
     .sort((a,b)=>String(b.data_visita||"").localeCompare(String(a.data_visita||"")))
     .slice(0,20);
 
@@ -2772,6 +2821,35 @@ const visitasCanceladasBase=visitas
     .sort((a,b)=>(String(b.data_visita||"")+String(b.horario_visita||"")).localeCompare(String(a.data_visita||"")+String(a.horario_visita||"")));
 
   
+  const desistenciasPeriodo=visitas
+    .filter(v=>Boolean(v.desistiu) && Boolean(v.desistiu_em))
+    .filter(v=>{
+      const d=new Date(v.desistiu_em);
+      if(Number.isNaN(d.getTime())) return false;
+      const parts=new Intl.DateTimeFormat("en-CA",{timeZone:BR_TIMEZONE,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);
+      const obj=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+      const iso=`${obj.year}-${obj.month}-${obj.day}`;
+      return iso>=reportStart && iso<=reportEnd;
+    })
+    .sort((a,b)=>new Date(b.desistiu_em)-new Date(a.desistiu_em));
+
+  function exportDesistencias(){
+    const rows=[
+      ["Data da desistência","Código do imóvel","Cliente","Pré-atendimento","Mostrador","Registrado por","Valor da proposta","Motivo"],
+      ...desistenciasPeriodo.map(v=>[
+        brDateTime(v.desistiu_em),
+        v.codigo_imovel||"",
+        v.cliente_nome||"",
+        getUser(v.pre_atendimento_id)?.nome||"",
+        isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||""),
+        getUser(v.desistiu_por)?.nome||"",
+        brMoney(v.valor_proposta),
+        v.desistiu_motivo||""
+      ])
+    ];
+    exportCsv(`locacoes-desistiram-${reportStart}-a-${reportEnd}.csv`,rows);
+  }
+
   function exportVisitasPorImovel(){
     const rows=[
       ["Código do imóvel","Número de visitas"],
@@ -3728,6 +3806,37 @@ function exportReport(){
                 <RevisitTable rows={revisitaReportRows}/>
               </section>
 
+              <section className="report-section desistencias-report-section">
+                <div className="report-section-head">
+                  <div>
+                    <h2>Locações que desistiram</h2>
+                    <p className="hint">Considera a data em que a desistência foi registrada, dentro do período selecionado acima.</p>
+                  </div>
+                  <button className="btn primary" onClick={exportDesistencias}>Exportar Excel/CSV</button>
+                </div>
+                <div className="report-kpis">
+                  <Metric title="Total de desistências" value={desistenciasPeriodo.length}/>
+                </div>
+                <div className="table-scroll">
+                  <table className="report-table desistencias-table">
+                    <thead><tr><th>Data</th><th>Imóvel</th><th>Cliente</th><th>Pré</th><th>Mostrador</th><th>Registrado por</th><th>Valor</th><th>Motivo</th></tr></thead>
+                    <tbody>
+                      {desistenciasPeriodo.map(v=><tr key={v.id}>
+                        <td>{brDateTime(v.desistiu_em)}</td>
+                        <td><button className="link-button" onClick={()=>openVisit(v)}>{v.codigo_imovel||"-"}</button></td>
+                        <td>{v.cliente_nome||"-"}</td>
+                        <td>{getUser(v.pre_atendimento_id)?.nome||"-"}</td>
+                        <td>{isVisitown(v)?VISITOWN_LABEL:(getUser(v.mostrador_id)?.nome||"-")}</td>
+                        <td>{getUser(v.desistiu_por)?.nome||"-"}</td>
+                        <td>{brMoney(v.valor_proposta)}</td>
+                        <td>{v.desistiu_motivo||"-"}</td>
+                      </tr>)}
+                      {!desistenciasPeriodo.length&&<tr><td colSpan="8">Nenhuma desistência registrada no período.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
               <section className="report-section fechamento-produtividade-section">
                 <h2>Produtividade da Equipe de Fechamento</h2>
                 <p className="hint">
@@ -4181,6 +4290,7 @@ function VisitCard({v,getUser,colorForUser,onClick}){
     <div className="badges">
       <span className={statusClass(v.status)}>{statusLabel(v.status)}</span>
       {v.checklist&&<span className="status checklist">Check list</span>}
+      {v.desistiu?<span className="status desistiu-status">DESISTIU</span>:null}
       {v.valor_proposta?<span className="status valor">{brMoney(v.valor_proposta)}</span>:null}
     </div>
   </div>;
@@ -4949,11 +5059,36 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
                 onChange={e=>setF({
                   ...f,
                   contrato_fechado:e.target.checked,
+                  desistiu:e.target.checked?false:Boolean(f.desistiu),
+                  desistiu_motivo:e.target.checked?"":(f.desistiu_motivo||""),
                   status:e.target.checked?"contrato":(f.status==="contrato"?"avancou_fechamento":f.status)
                 })}
               />
               Virou contrato
             </label>
+          }
+          {(isAdmin||isFechamento||isContratos||isGestor)&&
+            <label className="check desistiu-check">
+              <input
+                type="checkbox"
+                checked={!!f.desistiu}
+                onChange={e=>setF({
+                  ...f,
+                  desistiu:e.target.checked,
+                  contrato_fechado:e.target.checked?false:Boolean(f.contrato_fechado),
+                  desistiu_motivo:e.target.checked?(f.desistiu_motivo||""):""
+                })}
+              />
+              Desistiu
+            </label>
+          }
+          {f.desistiu&&(isAdmin||isFechamento||isContratos||isGestor)&&
+            <Field
+              label="Motivo da desistência *"
+              value={f.desistiu_motivo||""}
+              onChange={v=>setF({...f,desistiu_motivo:v})}
+              placeholder="Ex.: cliente desistiu, documentação, garantia, negociação..."
+            />
           }
         </>}
 

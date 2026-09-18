@@ -71096,3 +71096,9 @@
   .quick-filter-row strong{width:100%;min-width:0;}
   .quick-filter-btn{padding:6px 9px;font-size:12px;}
 }
+
+/* v3.5.30 - desistência de locação */
+.desistiu-check{border-color:#f0b7b7!important;background:#fff7f7!important;color:#9f1d1d!important;font-weight:800}
+.desistiu-status{background:#fff0f0!important;color:#b42318!important;border:1px solid #f3b4b4!important}
+.desistencias-table .link-button{border:0;background:transparent;color:#0b4f82;font-weight:800;text-decoration:underline;cursor:pointer;padding:0}
+.desistencias-table td{vertical-align:top}
