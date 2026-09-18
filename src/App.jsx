@@ -653,8 +653,8 @@ export default function App(){
   const canManageUsers = isAdmin || hasPerm("gerenciar_usuarios", false);
   const canDeleteVisits = isAdmin || isGestor || hasPerm("excluir_visita", false);
   const canViewReports = hasPerm("ver_relatorios", isAdmin||isGestor||isPre||isFechamento||isContratos);
-  const canStatusAvancouFechamento = isAdmin || hasPerm("status_avancou_fechamento", isFechamento);
-  const canStatusPosOk = isAdmin || hasPerm("status_pos_ok", isFechamento);
+  const canStatusAvancouFechamento = isAdmin || isGestor || hasPerm("status_avancou_fechamento", isFechamento);
+  const canStatusPosOk = isAdmin || isGestor || hasPerm("status_pos_ok", isFechamento);
   const canStatusContrato = isAdmin || isGestor || hasPerm("status_contrato", isContratos);
   const canOperateContratos = isAdmin || isGestor || isContratos;
 
@@ -1650,7 +1650,7 @@ export default function App(){
       if(!okObs)return;
     }
 
-    if(isFechamento && f.status==="avancou_fechamento" && !normalizeMoney(f.valor_proposta)){
+    if((isAdmin || isGestor || isFechamento) && f.status==="avancou_fechamento" && !normalizeMoney(f.valor_proposta)){
       return alert("Para avançar para fechamento, informe o valor da proposta.");
     }
 
@@ -1669,7 +1669,7 @@ export default function App(){
       }
     }
 
-    if(isFechamento && f.status==="avancou_fechamento" && !f.checklist_ok){
+    if((isAdmin || isGestor || isFechamento) && f.status==="avancou_fechamento" && !f.checklist_ok){
       return alert("Para avançar para fechamento, marque o Check list OK / enviar para contratos.");
     }
 
@@ -1730,7 +1730,7 @@ export default function App(){
       if(!fotosOk) return;
     }
 
-    if(isFechamento&&f.checklist&&!normalizeMoney(f.valor_proposta)){
+    if((isAdmin||isGestor||isFechamento)&&f.checklist&&!normalizeMoney(f.valor_proposta)){
       return alert("Para marcar Check List, o fechamento precisa informar o valor da proposta.");
     }
 
@@ -4997,7 +4997,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
       motivo_cancelamento_outros:["cancelada","reserva_cancelada"].includes(v)?f.motivo_cancelamento_outros:""})} options={statusOptions}/>
         }
 
-        {isFechamento&&f.status==="avancou_fechamento"&&
+        {(isAdmin||isGestor||isFechamento)&&f.status==="avancou_fechamento"&&
           <label className="checkline">
             <input
               type="checkbox"
