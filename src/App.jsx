@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.30-agenda-filtros-botoes";
+const APP_VERSION = "Castan Realtime v3.5.32-agenda-filtros-botoes";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -1650,7 +1650,7 @@ export default function App(){
       if(!okObs)return;
     }
 
-    if((isAdmin || isGestor || isFechamento) && f.status==="avancou_fechamento" && !normalizeMoney(f.valor_proposta)){
+    if(isFechamento && f.status==="avancou_fechamento" && !normalizeMoney(f.valor_proposta)){
       return alert("Para avançar para fechamento, informe o valor da proposta.");
     }
 
@@ -1669,7 +1669,7 @@ export default function App(){
       }
     }
 
-    if((isAdmin || isGestor || isFechamento) && f.status==="avancou_fechamento" && !f.checklist_ok){
+    if(isFechamento && f.status==="avancou_fechamento" && !f.checklist_ok){
       return alert("Para avançar para fechamento, marque o Check list OK / enviar para contratos.");
     }
 
@@ -1730,7 +1730,7 @@ export default function App(){
       if(!fotosOk) return;
     }
 
-    if((isAdmin||isGestor||isFechamento)&&f.checklist&&!normalizeMoney(f.valor_proposta)){
+    if(isFechamento&&f.checklist&&!normalizeMoney(f.valor_proposta)){
       return alert("Para marcar Check List, o fechamento precisa informar o valor da proposta.");
     }
 
@@ -2416,6 +2416,7 @@ async function deleteVisit(id){
   const posOkRel = statusCount("pos_ok");
   const fechamentoRel = statusCount("avancou_fechamento");
   const contratosRel = reportVisits.filter(v=>(v.status==="contrato" || v.contrato_fechado) && !v.desistiu).length;
+  const desistiuRel = reportVisits.filter(v=>Boolean(v.desistiu)).length;
 
   const statusReportRows = STATUS.map(([id,label])=>({
     id,
@@ -2523,6 +2524,7 @@ async function deleteVisit(id){
     {etapa:"Pós OK",total:posOkRel},
     {etapa:"Fechamento",total:fechamentoRel},
     {etapa:"Contrato",total:contratosRel},
+    {etapa:"Desistiu",total:desistiuRel},
     {etapa:"Cancelada",total:canceladasRel},
     {etapa:"Reserva cancelada",total:statusCount("reserva_cancelada")}
   ];
@@ -2532,7 +2534,8 @@ async function deleteVisit(id){
     {etapa:"Agendada → Cancelada",taxa:pct(canceladasRel,agendadasRel),base:`${canceladasRel}/${agendadasRel}`},
     {etapa:"Concluída → Fechamento",taxa:pct(fechamentoRel,concluidasRel),base:`${fechamentoRel}/${concluidasRel}`},
     {etapa:"Concluída → Cancelada",taxa:pct(canceladasRel,concluidasRel),base:`${canceladasRel}/${concluidasRel}`},
-    {etapa:"Fechamento → Contrato",taxa:pct(contratosRel,fechamentoRel),base:`${contratosRel}/${fechamentoRel}`}
+    {etapa:"Fechamento → Contrato",taxa:pct(contratosRel,fechamentoRel),base:`${contratosRel}/${fechamentoRel}`},
+    {etapa:"Fechamento → Desistiu",taxa:pct(desistiuRel,fechamentoRel),base:`${desistiuRel}/${fechamentoRel}`}
   ];
 
   const buildReport=arr=>{
@@ -2817,7 +2820,7 @@ const visitasCanceladasBase=visitas
     .sort((a,b)=>(a.data_visita+String(a.horario_visita)).localeCompare(b.data_visita+String(b.horario_visita)));
 
   const visitasFechamentoConsulta=visitas
-    .filter(v=>!isFotoAnuncio(v) && v.status==="avancou_fechamento" && Boolean(v.checklist_ok))
+    .filter(v=>!isFotoAnuncio(v) && !v.desistiu && v.status==="avancou_fechamento" && Boolean(v.checklist_ok))
     .sort((a,b)=>(String(b.data_visita||"")+String(b.horario_visita||"")).localeCompare(String(a.data_visita||"")+String(a.horario_visita||"")));
 
   
@@ -3737,6 +3740,7 @@ function exportReport(){
                   <Metric title="Concluídas" value={concluidasRel}/>
                   <Metric title="Fechamento" value={fechamentoRel}/>
                   <Metric title="Contratos" value={contratosRel}/>
+                  <Metric title="Desistiu" value={desistiuRel}/>
                 </div>
 
                 <div className="report-grid">
@@ -4997,7 +5001,7 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
       motivo_cancelamento_outros:["cancelada","reserva_cancelada"].includes(v)?f.motivo_cancelamento_outros:""})} options={statusOptions}/>
         }
 
-        {(isAdmin||isGestor||isFechamento)&&f.status==="avancou_fechamento"&&
+        {isFechamento&&f.status==="avancou_fechamento"&&
           <label className="checkline">
             <input
               type="checkbox"
