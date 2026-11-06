@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "./supabaseClient";
 import { RefreshCw, Bell, Plus, Users, CalendarDays, ListChecks, BarChart3, Home, Save, X, Trash2, MapPin, Upload, Image as ImageIcon, Navigation, ClipboardCheck, FileText, Copy, ExternalLink, Download } from "lucide-react";
 
-const APP_VERSION = "Castan Realtime v3.5.32-agenda-filtros-botoes";
+const APP_VERSION = "Castan Realtime v3.5.33-whatsapp-fotos";
 const VAPID_PUBLIC_KEY = "BN8EYhou9ichV7diogwMSgXFvDGMvnBq2VDErWy-K5PWmdp1auRYMejBDmB0i070fa2G6j3YD16Yqb2tjLISCEI";
 
 const VISITOWN_ID = "__visitown__";
@@ -435,6 +435,31 @@ const whatsappClienteLink=v=>{
   ].join("\n");
 
   return `https://wa.me/${p}?text=${encodeURIComponent(msg)}`;
+};
+
+const whatsappConfirmacaoFotosLink=v=>{
+  let p=onlyDigits(v?.proprietario_contato);
+  if(!p || p.length<10)return "";
+  if(!p.startsWith("55"))p="55"+p;
+
+  const nome=String(v?.proprietario_nome||"").trim().split(/\s+/)[0];
+  const saudacao=nome?`Olá, ${nome}!`:'Olá!';
+  const endereco=String(v?.endereco_imovel||"").trim();
+  const data=String(v?.data_visita||"").split("-").reverse().join("/");
+  const horario=String(v?.horario_visita||"").slice(0,5);
+  const mensagem=[
+    saudacao,
+    "",
+    "Estamos entrando em contato para confirmar o agendamento de fotos do seu imóvel.",
+    endereco?`Imóvel: ${endereco}`:"",
+    data?`Data: ${data}`:"",
+    horario?`Horário: ${horario}`:"",
+    "",
+    "Podemos confirmar o agendamento?",
+    "",
+    "Castan Imóveis"
+  ].filter(Boolean).join("\n");
+  return `https://wa.me/${p}?text=${encodeURIComponent(mensagem)}`;
 };
 
 const whatsappProprietarioLink=(v,tipo)=>{
@@ -4282,9 +4307,9 @@ function VisitCard({v,getUser,colorForUser,onClick}){
           </a>
         </p>
       )}
-      {v.cliente_contato && (
+      {(isFotoAnuncio(v) ? whatsappConfirmacaoFotosLink(v) : whatsappClienteLink(v)) && (
         <p>
-          <a href={whatsappClienteLink(v)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} className="whatsapp-link">
+          <a href={isFotoAnuncio(v) ? whatsappConfirmacaoFotosLink(v) : whatsappClienteLink(v)} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="whatsapp-link">
             Confirmar via WhatsApp
           </a>
         </p>
@@ -5101,6 +5126,10 @@ function VisitModal({f,setF,onClose,onSave,onDelete,onCancelVisit,isAdmin,isGest
           <textarea value={f.observacao||""} onChange={e=>setF({...f,observacao:e.target.value})}/>
         </label>
       </div>
+
+      {editing&&f.tipo_agendamento===TIPO_FOTO_ANUNCIO&&whatsappConfirmacaoFotosLink(f)&&<div style={{marginTop:16}}>
+        <a href={whatsappConfirmacaoFotosLink(f)} target="_blank" rel="noopener noreferrer" className="whatsapp-btn" onClick={e=>e.stopPropagation()}>Confirmar fotos via WhatsApp do proprietário</a>
+      </div>}
 
       {editing&&f.tipo_agendamento!==TIPO_FOTO_ANUNCIO&&<div style={{marginTop:16}}>
         <h3><MapPin size={17}/> Geolocalização da visita</h3>
